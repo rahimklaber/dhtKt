@@ -1,0 +1,33 @@
+syntax = "proto3";
+package chord;
+option java_package = "me.rahimklaber.dhtrpc";
+option java_outer_classname = "Services";
+
+service Node {
+    rpc successor (id) returns (tableEntry);
+    rpc join (tableEntry) returns (tableEntry);
+    rpc predecessor (empty) returns (tableEntry);
+    rpc notify (tableEntry) returns (empty);
+    rpc put (dataEntry) returns (empty); // should make this return something based on the result
+    rpc get (name) returns (dataEntry);
+}
+//Entry in the finger table
+message tableEntry {
+    int32 id = 1;
+    string host = 2;
+    int32 port = 3;
+}
+//Used as key when putting and getting.
+message name{
+    string name = 1;
+}
+message dataEntry{
+    string name =1;
+    string data =2;
+}
+message id {
+    int32 id = 1;
+}
+
+message empty {
+}
