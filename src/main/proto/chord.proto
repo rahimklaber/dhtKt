@@ -10,7 +10,13 @@ service Node {
     rpc notify (tableEntry) returns (empty);
     rpc put (dataEntry) returns (empty); // should make this return something based on the result
     rpc get (name) returns (dataEntry);
+    rpc list (empty) returns (keys);
 }
+
+message keys{
+    repeated string key = 1;
+}
+
 //Entry in the finger table
 message tableEntry {
     int32 id = 1;
