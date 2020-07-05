@@ -1,9 +1,12 @@
 package me.rahimklaber.dhtrpc
 
 /**
- * TODO: stop using blocking calls; figure out how to send a request, close the connection and then the recipient
- * will send us the response. This seems to be much better than making a request to a node and then waiting for that
- * node to make a request etc etc.
+ * TODO: stop using blocking calls; figure out how to send a request, close the connection and then the recipient will send us the response. This seems to be much better than making a request to a node and then waiting for that node to make a request etc etc.
+ */
+
+/**
+ * Todo: cache channels instead of creating a new one every time.
+ * Todo: Make public facing api use grpc but something else for inter-node communication.????
  */
 import io.grpc.ConnectivityState
 import io.grpc.ManagedChannelBuilder
@@ -38,7 +41,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     var currFinger = 0 // for fixFingers. from 0 to 10
 
     //todo make this work
-    fun checkPredecessor(): Unit {
+    fun checkPredecessor() {
         logger.debug { "checking predecessor" }
         if (predecessor == null)
             return
@@ -57,10 +60,26 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         }
 
     }
+    fun listRequest(entry: Services.tableEntry): List<String>{
+        logger.info { "sending list request to ${entry.host}:${entry.port}" }
+        val channel = ManagedChannelBuilder.forAddress(entry.host, entry.port)
+            .usePlaintext()
+            .build()
+        val stub = NodeGrpc.newBlockingStub(channel)
+        val keys = stub.list(Services.empty.getDefaultInstance()).keyList
+        channel.shutdown()
+        return keys
+    }
 
+    override fun list(request: Services.empty, responseObserver: StreamObserver<Services.keys>) {
+        logger.info { "received list request" }
+        responseObserver.onNext(Services.keys.newBuilder().addAllKey(dataTable.keys).build())
+        responseObserver.onCompleted()
+    }
     fun fixFingers() {
         val helper = fingerTable[fingerTableIds[currFinger]]!!
         val successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
+        //Todo: wtf is this 🔽
         if (successorRequest.port != 0) {
             fingerTable[fingerTableIds[currFinger]] = successorRequest
 
@@ -105,7 +124,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     override fun notify(request: Services.tableEntry?, responseObserver: StreamObserver<Services.empty>?) {
         logger.debug { "received notify request from ${request?.host}:${request?.port}" }
-        println("predecessor is currently $predecessor")
         if (predecessor == null) {
 
             predecessor = request
@@ -209,6 +227,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
      * Put a key,value pair into the DHT.
      */
     fun putRequest(name: String, data: String) {
+        logger.info { "Making Put request for key: $name, value: $data" }
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
         if (inRangeSuccessor(hash)) {
             dataTable[name] = data
@@ -292,17 +311,17 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun inRangeSuccessor(id: Int): Boolean {
         // If successor id is bigger than our id and the given id is between us and our successor
-        if (fingerTable[fingerTableIds[0]]!!.id > self.id && self.id < id && id <= fingerTable[fingerTableIds[0]]!!.id) {
-            return true
+        return if (fingerTable[fingerTableIds[0]]!!.id > self.id && self.id < id && id <= fingerTable[fingerTableIds[0]]!!.id) {
+            true
         }
         // If our successor is "behind" us, meaning they wrapper around the chord ring
         else if (fingerTable[fingerTableIds[0]]!!.id < self.id &&
             !(self.id >= id && fingerTable[fingerTableIds[0]]!!.id < id)
         ) {
-            return true
+            true
         }
         // If i am the only one in the network
-        else return fingerTable[fingerTableIds[0]]!! == self
+        else fingerTable[fingerTableIds[0]]!! == self
     }
 
     override fun successor(request: Services.id, responseObserver: StreamObserver<Services.tableEntry>) {
@@ -411,11 +430,10 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     override fun get(request: Services.name, responseObserver: StreamObserver<Services.dataEntry>) {
 
         val hash = request.name.hashCode().absoluteValue % CHORD_SIZE
-        var dataEntry: Services.dataEntry? = null
+        val dataEntry: Services.dataEntry?
         dataEntry = if (inRangeSuccessor(hash)) {
             dataEntryfromMapEntry(request.name, dataTable[request.name]!!)
         } else {
-            val before = maxBefore(hash)
             getRequest(request.name)
         }
         logger.info("Received get request for key:  ${request.name}, value: ${dataEntry.data}")
