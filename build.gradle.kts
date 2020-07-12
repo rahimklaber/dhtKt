@@ -36,7 +36,8 @@ dependencies {
 
     implementation("no.tornado:tornadofx:1.7.17")
 
-    testCompile("junit", "junit", "4.12")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.6.2")
+    testImplementation("ch.tutteli.atrium:atrium-fluent-en_GB:0.12.0")
 }
 
 protobuf {
@@ -69,4 +70,11 @@ application {
 }
 javafx {
     modules("javafx.controls", "javafx.fxml")
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
 }

@@ -143,11 +143,12 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
      * diff between fingertable pos and an id
      * takes into account that the fingertable is a ring
      *
+     * calculates how much needs to be added to `finger` to be `id`
      */
-    fun fingerDiff(finger: Int, id: Int): Int {
+    fun  fingerDiff(finger: Int, id: Int): Int {
         return when {
             id < finger -> {
-                (TABLE_SIZE - finger) + id
+                (CHORD_SIZE - finger) + id
             }
             id > finger -> {
                 id - finger
