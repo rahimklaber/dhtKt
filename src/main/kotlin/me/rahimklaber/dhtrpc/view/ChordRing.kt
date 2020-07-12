@@ -9,18 +9,21 @@ import javafx.event.ActionEvent
 import javafx.event.EventHandler
 import javafx.scene.control.TableView
 import javafx.scene.control.TextArea
+import javafx.stage.FileChooser
 import javafx.util.Duration
 import me.rahimklaber.dhtrpc.ChordNode
 import me.rahimklaber.dhtrpc.Services.tableEntry
 import tornadofx.*
+import java.io.File
 
 data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-    //    val args = arrayOf("192.168.0.175", "222")
-//
-    val args = arrayOf("192.168.0.175", "222", "192.168.0.187", "554")
+    val args = arrayOf("192.168.0.175", "222")
+
+    //
+//    val args = arrayOf("192.168.0.175", "765", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTable
     val datamap = node.dataTable
@@ -32,19 +35,37 @@ class ChordRing : View("ChordRing") {
 
 
     override val root = borderpane {
-        top = label {
+        top = hbox {
 
-            val timeline = Timeline(
-                KeyFrame(
-                    Duration.millis(1000.0),
-                    EventHandler { e: ActionEvent ->
-                        this@label.text = "${node.self}\n${node.predecessor}"
-                    }
+            label {
+
+                val timeline = Timeline(
+                    KeyFrame(
+                        Duration.millis(1000.0),
+                        EventHandler { e: ActionEvent ->
+                            this@label.text = "${node.self}\n${node.predecessor}"
+                        }
+                    )
                 )
-            )
-            timeline.cycleCount = Animation.INDEFINITE // loop forever
+                timeline.cycleCount = Animation.INDEFINITE // loop forever
 
-            timeline.play()
+                timeline.play()
+
+            }
+            button {
+                onHover {
+                    tooltip("bulk insert values into dht")
+                }
+
+                text = "bulk Insert file"
+                setOnAction {
+                    val file = chooseFile(filters = arrayOf(FileChooser.ExtensionFilter("json", "*.json"))).first()
+                    runAsync {
+                        bulkInsert(file)
+                    }
+                }
+            }
+
 
         }
         right = tableview<MyPair<String, String?>> {
@@ -72,7 +93,7 @@ class ChordRing : View("ChordRing") {
                     runAsyncWithOverlay {
                         val list = node.listRequest(this@tableview.selectedItem!!.tableEntry)
 
-                        (right as TableView<MyPair<String, String?>>).items =
+                        (right as TableView<*>).items =
                             FXCollections.observableArrayList(list.map { MyPair<String, String?>(it, null) })
                     }
                 }
@@ -136,7 +157,26 @@ class ChordRing : View("ChordRing") {
                 }
             }
     }
+
+    /**
+     * json file :
+     *      {key : value}
+     */
+    fun bulkInsert(file: File) {
+
+        val json = loadJsonObject(file.inputStream())
+        val jsonMap = json.toMap().mapValues {
+            it.value.toString()
+        }
+        var count = 0
+        jsonMap.forEach { (key, value) ->
+            node.putRequest(key, value)
+            if (count++ == 1000) return
+        }
+
+    }
 }
+
 
 class RingApp : App(ChordRing::class)
 
