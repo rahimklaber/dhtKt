@@ -45,29 +45,37 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         logger.debug { "checking predecessor" }
         if (predecessor == null)
             return
+        val channel = ManagedChannelBuilder.forAddress(predecessor!!.host, predecessor!!.port)
+            .usePlaintext()
+            .build()
         try {
-            val channel = ManagedChannelBuilder.forAddress(predecessor!!.host, predecessor!!.port)
-                .usePlaintext()
-                .build()
             val state = channel.getState(false)
             Thread.sleep(10)
             if (state == ConnectivityState.TRANSIENT_FAILURE) {
                 predecessor = null
             }
-            channel.shutdown()
+
         } catch (e: Exception) {
             println(e)
+        } finally {
+            channel.shutdown()
         }
 
     }
-    fun listRequest(entry: Services.tableEntry): List<String>{
+
+    fun listRequest(entry: Services.tableEntry): List<String> {
         logger.info { "sending list request to ${entry.host}:${entry.port}" }
         val channel = ManagedChannelBuilder.forAddress(entry.host, entry.port)
             .usePlaintext()
             .build()
         val stub = NodeGrpc.newBlockingStub(channel)
-        val keys = stub.list(Services.empty.getDefaultInstance()).keyList
-        channel.shutdown()
+        val keys: List<String>
+        try {
+            keys = stub.list(Services.empty.getDefaultInstance()).keyList
+        } finally {
+            channel.shutdown()
+        }
+
         return keys
     }
 
@@ -76,6 +84,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         responseObserver.onNext(Services.keys.newBuilder().addAllKey(dataTable.keys).build())
         responseObserver.onCompleted()
     }
+
     fun fixFingers() {
         val helper = fingerTable[fingerTableIds[currFinger]]!!
         val successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
@@ -145,7 +154,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
      *
      * calculates how much needs to be added to `finger` to be `id`
      */
-    fun  fingerDiff(finger: Int, id: Int): Int {
+    fun fingerDiff(finger: Int, id: Int): Int {
         return when {
             id < finger -> {
                 (CHORD_SIZE - finger) + id
@@ -238,8 +247,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                 .usePlaintext()
                 .build()
             val stub = NodeGrpc.newBlockingStub(channel)
-            val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
-            channel.shutdown()
+            try {
+                val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
+            } finally {
+                channel.shutdown()
+            }
+
+
         }
     }
 
@@ -291,9 +305,12 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             .usePlaintext()
             .build()
         val stub = NodeGrpc.newBlockingStub(channel)
-        val successor = stub.successor(serviceId)
-        channel.shutdown()
-
+        val successor: Services.tableEntry
+        try {
+            successor = stub.successor(serviceId)
+        } finally {
+            channel.shutdown()
+        }
         return successor
 
 
@@ -422,8 +439,12 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                 .usePlaintext()
                 .build()
             val stub = NodeGrpc.newBlockingStub(channel)
-            val get = stub.get(Services.name.newBuilder().setName(name).build())
-            channel.shutdown()
+            val get: Services.dataEntry
+            try {
+                get = stub.get(Services.name.newBuilder().setName(name).build())
+            } finally {
+                channel.shutdown()
+            }
             get
         }
     }
