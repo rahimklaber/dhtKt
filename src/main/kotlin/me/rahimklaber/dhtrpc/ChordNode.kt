@@ -214,8 +214,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             .usePlaintext()
             .build()
         val stub = NodeGrpc.newBlockingStub(channel)
-        val predecessor = stub.predecessor(Services.empty.getDefaultInstance())
-        channel.shutdown()
+        val predecessor: Services.tableEntry?
+        try {
+            predecessor = stub.predecessor(Services.empty.getDefaultInstance())
+        }finally {
+            channel.shutdown()
+        }
+
         return predecessor
     }
 
