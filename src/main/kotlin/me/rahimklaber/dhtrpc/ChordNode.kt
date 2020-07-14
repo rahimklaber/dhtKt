@@ -143,10 +143,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         responseObserver?.onCompleted()
     }
 
-    fun MutableMap<Int, Services.tableEntry>.putIf(key: Int, value: Services.tableEntry, predicate: (Int) -> Boolean) {
-        if (predicate(value.id)) put(key, value)
 
-    }
 
     /**
      * diff between fingertable pos and an id
@@ -174,6 +171,8 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
      * @param e
      */
     fun insertIntoTable(e: Services.tableEntry) {
+        // This is confusing as fuck
+        // dont like that the `insertPredicate` fun uses the `e` param.
         fun insertPredicate(k: Int): Boolean {
             return if (fingerTable[k] == null) {
                 true
@@ -183,7 +182,10 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                 diffNew <= diffCurr
             }
         }
+        fun MutableMap<Int, Services.tableEntry>.putIf(key: Int, value: Services.tableEntry, predicate: (Int) -> Boolean) {
+            if (predicate(key)) put(key, value)
 
+        }
         if (e.id == self.id) return
         fingerTableIds
             .forEach {
