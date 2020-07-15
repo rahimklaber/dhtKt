@@ -60,8 +60,10 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         try {
             val state = channel.getState(false)
             Thread.sleep(10)
+            //while state ==  ConnectivityState.CONNECTING ??
             if (state == ConnectivityState.TRANSIENT_FAILURE) {
                 predecessor = null
+                logger.info { "Predecessor has failed." }
             }
 
         } catch (e: Exception) {
@@ -93,7 +95,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     }
 
     fun fixFingers() {
-        val helper = fingerTable[fingerTableIds[currFinger]]!!
+        val helper = predecessor!! // Todo: What should we do here?
         val successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
         //Todo: wtf is this 🔽
         if (successorRequest.port != 0) {
@@ -432,6 +434,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     }
 
     fun getRequest(name: String): Services.dataEntry {
+        logger.info { "Making get request for : $name" }
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
         return if (inRangeSuccessor(hash) && dataTable.containsKey(name)) {
             dataEntryfromMapEntry(name, dataTable[name]!!)
@@ -458,7 +461,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         } else {
             getRequest(request.name)
         }
-        logger.info("Responding to get request (for ${request.name}) with ${dataEntry.data}")
+        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry.data}")
         responseObserver.onNext(dataEntry)
         responseObserver.onCompleted()
     }
