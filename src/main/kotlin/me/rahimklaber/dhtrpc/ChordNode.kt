@@ -59,11 +59,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         val channel = getChannel(predecessor!!.host, predecessor!!.port)
         try {
             val state = channel.getState(false)
-            Thread.sleep(10)
+            Thread.sleep(10)//Todo: how to check foor dead node better?
             //while state ==  ConnectivityState.CONNECTING ??
             if (state == ConnectivityState.TRANSIENT_FAILURE) {
-                predecessor = null
                 logger.info { "Predecessor has failed." }
+                val toRemove = fingerTable.filter { (k, e) -> e == predecessor }.keys
+                fingerTable.keys.removeAll(toRemove)
+                predecessor = null
             }
 
         } catch (e: Exception) {
@@ -76,7 +78,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun listRequest(entry: Services.tableEntry): List<String> {
         logger.info { "sending list request to ${entry.host}:${entry.port}" }
-        val channel = getChannel(entry.host,entry.port)
+        val channel = getChannel(entry.host, entry.port)
         val stub = NodeGrpc.newBlockingStub(channel)
         val keys: List<String>
         try {
@@ -95,12 +97,15 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     }
 
     fun fixFingers() {
+        currFinger = if (currFinger == 0) 1 else currFinger
         val helper = predecessor!! // Todo: What should we do here?
         val successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
         //Todo: wtf is this 🔽
         if (successorRequest.port != 0) {
             fingerTable[fingerTableIds[currFinger]] = successorRequest
 
+        } else {
+            logger.info { "port is 0. At FixFingers" }
         }
 
         currFinger = (currFinger + 1) % TABLE_SIZE
@@ -118,6 +123,8 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             ) {
                 if (predecessor_of_successor.port != 0)
                     fingerTable[fingerTableIds[0]] = predecessor_of_successor
+                else
+                    logger.info { "Port is 0. at stabilize." }
 
             }
             notifyRequest(fingerTable[fingerTableIds[0]]!!)
@@ -131,23 +138,23 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun notifyRequest(entry: Services.tableEntry): Services.empty? {
         logger.debug { "sending notify request to ${entry.host}:${entry.port}" }
-        val channel = getChannel(entry.host,entry.port)
+        val channel = getChannel(entry.host, entry.port)
         val stub = NodeGrpc.newBlockingStub(channel)
         val notify = stub.notify(self)
 //        channel.shutdown()
         return notify
     }
 
-    override fun notify(request: Services.tableEntry?, responseObserver: StreamObserver<Services.empty>?) {
-        logger.debug { "received notify request from ${request?.host}:${request?.port}" }
+    override fun notify(request: Services.tableEntry, responseObserver: StreamObserver<Services.empty>) {
+        logger.debug { "received notify request from ${request.host}:${request.port}" }
         if (predecessor == null) {
 
             predecessor = request
-        } else if (inRangePredecessor(request!!.id)) {
+        } else if (inRangePredecessor(request.id)) {
             predecessor = request
         }
-        responseObserver?.onNext(Services.empty.getDefaultInstance())
-        responseObserver?.onCompleted()
+        responseObserver.onNext(Services.empty.getDefaultInstance())
+        responseObserver.onCompleted()
     }
 
 
@@ -223,7 +230,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
         logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
-        val channel = getChannel(entry.host,entry.port)
+        val channel = getChannel(entry.host, entry.port)
         val stub = NodeGrpc.newBlockingStub(channel)
         val predecessor: Services.tableEntry?
         try {
@@ -259,7 +266,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             dataTable[name] = data
         } else {
             val before = maxBefore(hash)
-            val channel = getChannel(before!!.host,before.port)
+            val channel = getChannel(before!!.host, before.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             try {
                 val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
@@ -284,7 +291,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     }
 
     fun joinRequest(host: String, port: Int): Services.tableEntry {
-        val channel = getChannel(host,port)
+        val channel = getChannel(host, port)
         val stub = NodeGrpc.newBlockingStub(channel)
         val join = stub.join(self)
 //        channel.shutdown()
@@ -414,7 +421,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         }
         scheduledExecutor.scheduleAtFixedRate({
             try {
-                checkPredecessor();fixFingers();stabilize()
+                stabilize();checkPredecessor();fixFingers()
             } catch (e: java.lang.Exception) {
                 println(e)
             }
@@ -440,7 +447,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             dataEntryfromMapEntry(name, dataTable[name]!!)
         } else {
             val before = maxBefore(hash)
-            val channel = getChannel(before!!.host,before.port)
+            val channel = getChannel(before!!.host, before.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             val get: Services.dataEntry
             try {
