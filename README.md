@@ -12,7 +12,8 @@
 - [ ]  replication for durability
 
 ## things to think about
-* should the value of the key/value pair be mutable? If so this would make it hard to do replication
-* should probably make the server and client seperate
+* should the value of the key/value pair be mutable? If so this would make it hard to do replication.
+* should probably make the server and client separate.
+* If predecessor fails, it should be removed from the finger table.
 
 
