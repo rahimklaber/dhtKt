@@ -21,6 +21,9 @@ import kotlin.math.absoluteValue
 import kotlin.math.pow
 
 class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
+    //    init {
+//        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
+//    }
     private val logger = KotlinLogging.logger {}
     val self: Services.tableEntry = Services.tableEntry.newBuilder()
         .setHost(host)
@@ -48,10 +51,30 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         }
     }
 
-    //fun successor()= fingerTable[fingerTableIds[0]]
+    /**
+     * Try to send a message.
+     * If it fails due to a closed connection, the channel is removed and the node is removed from the finger table.
+     */
+    fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
+        try {
+            `fun`()
+        } catch (e: StatusRuntimeException) {
+            channelPool["$host$port"]?.shutdown()
+            channelPool.remove("$host$port")
+            val toRemove = fingerTable.filter { (_, e) -> (e.host == host) and (e.port == port) }.keys
+            fingerTable.keys.removeAll(toRemove)
+            //close
+        }
+    }
+
+    var successor: Services.tableEntry?
+        get() = fingerTable[fingerTableIds[0]]
+        set(value) {
+            fingerTable[fingerTableIds[0]] = value
+        }
     var currFinger = 0 // for fixFingers. from 0 to 10
 
-    //todo make this work
+    //todo Make this nicer
     fun checkPredecessor() {
         logger.debug { "checking predecessor" }
         if (predecessor == null)
@@ -59,7 +82,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         val channel = getChannel(predecessor!!.host, predecessor!!.port)
         try {
             val state = channel.getState(false)
-            Thread.sleep(10)//Todo: how to check foor dead node better?
+            Thread.sleep(100)//Todo: how to check foor dead node better?
             //while state ==  ConnectivityState.CONNECTING ??
             if (state == ConnectivityState.TRANSIENT_FAILURE) {
                 logger.info { "Predecessor has failed." }
@@ -99,9 +122,12 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     fun fixFingers() {
         currFinger = if (currFinger == 0) 1 else currFinger
         val helper = predecessor!! // Todo: What should we do here?
-        val successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
+        var successorRequest: Services.tableEntry? = null
+        tryOrClose(helper.host, helper.port) {
+            successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
+        }
         //Todo: wtf is this 🔽
-        if (successorRequest.port != 0) {
+        if (successorRequest != null && successorRequest?.port != 0) {
             fingerTable[fingerTableIds[currFinger]] = successorRequest
 
         } else {
@@ -113,24 +139,24 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun stabilize() {
         try {
-            logger.debug { "stabilize... entrry: ${fingerTable[fingerTableIds[0]]!!}" }
-            if (fingerTable[fingerTableIds[0]]!!.port == 0) {
-                // fingerTable[fingerTableIds[0]] =self
-            }
-            val predecessor_of_successor = predecessorRequest(fingerTable[fingerTableIds[0]]!!)
+            logger.debug { "checking successor" }
+            val predecessor_of_successor = predecessorRequest(successor!!)
             if (predecessor_of_successor != null &&
                 inRangeSuccessor(predecessor_of_successor.id)
             ) {
                 if (predecessor_of_successor.port != 0)
-                    fingerTable[fingerTableIds[0]] = predecessor_of_successor
+                    successor = predecessor_of_successor
                 else
                     logger.info { "Port is 0. at stabilize." }
 
             }
-            notifyRequest(fingerTable[fingerTableIds[0]]!!)
-        } catch (e: Exception) {
-            e.stackTrace.forEach { println(it) }
-            println(e)
+            notifyRequest(successor!!)
+        } catch (e: StatusRuntimeException) {
+            logger.info { "successor has failed." }//Should probably make this debug.
+            fingerTable.remove(fingerTableIds[0])
+
+        } catch (e: NullPointerException) {
+            successor = self
         }
 
 
@@ -230,14 +256,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
         logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
-        val channel = getChannel(entry.host, entry.port)
-        val stub = NodeGrpc.newBlockingStub(channel)
-        val predecessor: Services.tableEntry?
-        try {
+        var predecessor: Services.tableEntry? = null
+        tryOrClose(entry.host, entry.port) {
+            val channel = getChannel(entry.host, entry.port)
+            val stub = NodeGrpc.newBlockingStub(channel)
             predecessor = stub.predecessor(Services.empty.getDefaultInstance())
-        } finally {
-//            channel.shutdown()
         }
+
 
         return predecessor
     }
@@ -316,13 +341,14 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         val serviceId = Services.id.newBuilder().setId(id).build()
         val channel = getChannel(host, port)
         val stub = NodeGrpc.newBlockingStub(channel)
-        val successor: Services.tableEntry
-        try {
+        var successor: Services.tableEntry? = null
+
+        tryOrClose(host, port) {
             successor = stub.successor(serviceId)
-        } finally {
-//            channel.shutdown()
         }
-        return successor
+
+
+        return successor ?: self // return this if null
 
 
     }
@@ -340,17 +366,17 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun inRangeSuccessor(id: Int): Boolean {
         // If successor id is bigger than our id and the given id is between us and our successor
-        return if (fingerTable[fingerTableIds[0]]!!.id > self.id && self.id < id && id <= fingerTable[fingerTableIds[0]]!!.id) {
+        return if (successor!!.id > self.id && self.id < id && id <= successor!!.id) {
             true
         }
         // If our successor is "behind" us, meaning they wrapper around the chord ring
-        else if (fingerTable[fingerTableIds[0]]!!.id < self.id &&
-            !(self.id >= id && fingerTable[fingerTableIds[0]]!!.id < id)
+        else if (successor!!.id < self.id &&
+            !(self.id >= id && successor!!.id < id)
         ) {
             true
         }
         // If i am the only one in the network
-        else fingerTable[fingerTableIds[0]]!! == self
+        else successor == self
     }
 
     override fun successor(request: Services.id, responseObserver: StreamObserver<Services.tableEntry>) {
@@ -358,14 +384,14 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
         val maxBefore = maxBefore(request.id)
 
-        if (inRangeSuccessor(request.id)) {
-            responseObserver.onNext(fingerTable[fingerTableIds[0]])
+        if (successor != null && inRangeSuccessor(request.id)) {
+            responseObserver.onNext(successor)
         } else {
             when {
                 maxBefore == null -> {
                     responseObserver.onNext(self)
                 }
-                fingerTable[fingerTableIds[0]]!!.id == self.id -> {
+                successor != null && successor!!.id == self.id -> { // only you in the finger table.
                     responseObserver.onNext(self)
                 }
                 else -> {

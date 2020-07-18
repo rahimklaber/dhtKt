@@ -8,7 +8,7 @@
 - [ ]  key,value pairs have metadeta
 - [ ]  ask node for it's keys
 - [ ]  allow for `gracefull` exit
-- [ ]  allow for `abrupt` exit
+- [x]  allow for `abrupt` exit ( the keys are lost, but the dht will 'repair' itself)
 - [ ]  replication for durability
 
 ## things to think about
