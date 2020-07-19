@@ -104,16 +104,16 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun listRequest(entry: Services.tableEntry): List<String> {
         logger.info { "sending list request to ${entry.host}:${entry.port}" }
-        val channel = getChannel(entry.host, entry.port)
-        val stub = NodeGrpc.newBlockingStub(channel)
-        val keys: List<String>
-        try {
+
+        var keys: List<String>? = null
+        tryOrClose(entry.host,entry.port){
+            val channel = getChannel(entry.host, entry.port)
+            val stub = NodeGrpc.newBlockingStub(channel)
             keys = stub.list(Services.empty.getDefaultInstance()).keyList
-        } finally {
-//            channel.shutdown()
         }
 
-        return keys
+
+        return keys ?: emptyList()
     }
 
     override fun list(request: Services.empty, responseObserver: StreamObserver<Services.keys>) {
@@ -167,13 +167,14 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     }
 
-    fun notifyRequest(entry: Services.tableEntry): Services.empty? {
+    fun notifyRequest(entry: Services.tableEntry) {
         logger.debug { "sending notify request to ${entry.host}:${entry.port}" }
-        val channel = getChannel(entry.host, entry.port)
-        val stub = NodeGrpc.newBlockingStub(channel)
-        val notify = stub.notify(self)
-//        channel.shutdown()
-        return notify
+        tryOrClose(entry.host,entry.port){
+            val channel = getChannel(entry.host, entry.port)
+            val stub = NodeGrpc.newBlockingStub(channel)
+            val notify = stub.notify(self)
+        }
+
     }
 
     override fun notify(request: Services.tableEntry, responseObserver: StreamObserver<Services.empty>) {
@@ -296,15 +297,15 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             dataTable[name] = data
         } else {
             val before = maxBefore(hash)
-            val channel = getChannel(before!!.host, before.port)
-            val stub = NodeGrpc.newBlockingStub(channel)
-            try {
-                val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
-            } finally {
-//                channel.shutdown()
+            if (before == null){
+                logger.warn { "Cannot insert data" }
+                return
             }
-
-
+            tryOrClose(before.host,before.port){
+                val channel = getChannel(before.host, before.port)
+                val stub = NodeGrpc.newBlockingStub(channel)
+                val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
+            }
         }
     }
 
@@ -409,7 +410,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     /**
      * get the closest preceding node to the id
-     *
+     * Todo: fix this, it doesnt take the ring into consideration
      * @param id
      * @return
      */
@@ -471,21 +472,21 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             .build()
     }
 
-    fun getRequest(name: String): Services.dataEntry {
+    fun getRequest(name: String): Services.dataEntry? {
         logger.info { "Making get request for : $name" }
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
         return if (inRangeSuccessor(hash) && dataTable.containsKey(name)) {
             dataEntryfromMapEntry(name, dataTable[name]!!)
         } else {
             val before = maxBefore(hash)
-            val channel = getChannel(before!!.host, before.port)
-            val stub = NodeGrpc.newBlockingStub(channel)
-            val get: Services.dataEntry
-            try {
+
+            var get: Services.dataEntry? = null
+            tryOrClose(before!!.host,before.port){
+                val channel = getChannel(before.host, before.port)
+                val stub = NodeGrpc.newBlockingStub(channel)
                 get = stub.get(Services.name.newBuilder().setName(name).build())
-            } finally {
-//                channel.shutdown()
             }
+
             get
         }
     }
@@ -499,7 +500,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         } else {
             getRequest(request.name)
         }
-        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry.data}")
+        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry?.data}")
         responseObserver.onNext(dataEntry)
         responseObserver.onCompleted()
     }
