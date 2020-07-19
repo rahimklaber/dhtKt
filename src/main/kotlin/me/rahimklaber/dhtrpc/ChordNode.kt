@@ -153,8 +153,10 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             notifyRequest(successor!!)
         } catch (e: StatusRuntimeException) {
             logger.info { "successor has failed." }//Should probably make this debug.
-            fingerTable.remove(fingerTableIds[0])
-
+            val toRemove = fingerTable.filter { (k, e) -> e == successor }.keys
+            fingerTable.keys.removeAll(toRemove)
+            channelPool["${successor?.host}${successor?.port}"]?.shutdown()
+            channelPool.remove("${successor?.host}${successor?.port}")
         } catch (e: NullPointerException) {
             successor = self
         }
