@@ -76,15 +76,17 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     //todo Make this nicer
     fun checkPredecessor() {
-        logger.debug { "checking predecessor" }
+        logger.info { "checking predecessor $predecessor" }
         if (predecessor == null)
             return
         val channel = getChannel(predecessor!!.host, predecessor!!.port)
         try {
-            val state = channel.getState(false)
-            Thread.sleep(100)//Todo: how to check foor dead node better?
-            //while state ==  ConnectivityState.CONNECTING ??
-            if (state == ConnectivityState.TRANSIENT_FAILURE) {
+            val state = channel.getState(true)
+
+            // THere are problems when the channel is not shutdown correctly
+            // The channel stays open and the connectivity state is set to idle??
+            // Not having state == ...IDLE caused a memory leak somehow.
+            if (state == ConnectivityState.TRANSIENT_FAILURE || state == ConnectivityState.IDLE) {
                 logger.info { "Predecessor has failed." }
                 val toRemove = fingerTable.filter { (k, e) -> e == predecessor }.keys
                 fingerTable.keys.removeAll(toRemove)
@@ -93,6 +95,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
         } catch (e: Exception) {
             println(e)
+            channel.shutdown()
         } finally {
 //            channel.shutdown()
         }
@@ -449,7 +452,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         }
         scheduledExecutor.scheduleAtFixedRate({
             try {
-                stabilize();checkPredecessor();fixFingers()
+                checkPredecessor();stabilize();fixFingers()
             } catch (e: java.lang.Exception) {
                 println(e)
             }

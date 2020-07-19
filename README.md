@@ -16,4 +16,6 @@
 * should probably make the server and client separate.
 * If predecessor fails, it should be removed from the finger table.
 
+## Bugs
 
+1. When a node quits without shutting down the channels (sockets), It's seems that the sockects aren't closed.
