@@ -6,7 +6,7 @@
 - [x]  notify our successor of us(stabilization)
 - [x]  check for down nodes in figher table and replace them accordingly
 - [ ]  key,value pairs have metadeta
-- [ ]  ask node for it's keys
+- [x]  ask node for it's keys
 - [ ]  allow for `gracefull` exit
 - [x]  allow for `abrupt` exit ( the keys are lost, but the dht will 'repair' itself)
 - [ ]  replication for durability
