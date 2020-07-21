@@ -98,8 +98,8 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
             // THere are problems when the channel is not shutdown correctly
             // The channel stays open and the connectivity state is set to idle??
-            // Not having state == ...IDLE caused a memory leak somehow.
-            if (state == ConnectivityState.TRANSIENT_FAILURE || state == ConnectivityState.IDLE) {
+            // Not having state == ...IDLE caused a memory leak somehow or NVM.
+            if (state == ConnectivityState.TRANSIENT_FAILURE) {
                 logger.info { "Predecessor has failed." }
                 val toRemove = fingerTable.filter { (k, e) -> e == predecessor }.keys
                 fingerTable.keys.removeAll(toRemove)
