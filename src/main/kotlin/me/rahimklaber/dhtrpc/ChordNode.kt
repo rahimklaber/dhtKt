@@ -38,6 +38,19 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     val fingerTableIds = IntRange(1, TABLE_SIZE).map { (self.id + 2.0.pow(it - 1)).toInt() % CHORD_SIZE }
     val scheduledExecutor = Executors.newSingleThreadScheduledExecutor()
     val channelPool = HashMap<String, ManagedChannel>()
+    var server: Server? = null
+
+    init {
+        Runtime.getRuntime().addShutdownHook(Thread {
+            gracefullShutdownHook()
+        })
+    }
+
+    fun gracefullShutdownHook() {
+        scheduledExecutor.shutdownNow()
+        server?.shutdownNow()
+        channelPool.forEach { it.value.shutdownNow() }
+    }
 
     fun getChannel(host: String, port: Int): ManagedChannel {
         // `:` separator ?
@@ -76,7 +89,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     //todo Make this nicer
     fun checkPredecessor() {
-        logger.info { "checking predecessor $predecessor" }
+//        logger.info { "checking predecessor $predecessor" }
         if (predecessor == null)
             return
         val channel = getChannel(predecessor!!.host, predecessor!!.port)
@@ -106,7 +119,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         logger.info { "sending list request to ${entry.host}:${entry.port}" }
 
         var keys: List<String>? = null
-        tryOrClose(entry.host,entry.port){
+        tryOrClose(entry.host, entry.port) {
             val channel = getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             keys = stub.list(Services.empty.getDefaultInstance()).keyList
@@ -169,7 +182,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun notifyRequest(entry: Services.tableEntry) {
         logger.debug { "sending notify request to ${entry.host}:${entry.port}" }
-        tryOrClose(entry.host,entry.port){
+        tryOrClose(entry.host, entry.port) {
             val channel = getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             val notify = stub.notify(self)
@@ -297,11 +310,11 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             dataTable[name] = data
         } else {
             val before = maxBefore(hash)
-            if (before == null){
+            if (before == null) {
                 logger.warn { "Cannot insert data" }
                 return
             }
-            tryOrClose(before.host,before.port){
+            tryOrClose(before.host, before.port) {
                 val channel = getChannel(before.host, before.port)
                 val stub = NodeGrpc.newBlockingStub(channel)
                 val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
@@ -444,6 +457,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             .addService(this)
             .build()
             .start()
+        server = start
         if (args.size > 2)
             start(args[2], args[3].toInt())
         else {
@@ -481,7 +495,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             val before = maxBefore(hash)
 
             var get: Services.dataEntry? = null
-            tryOrClose(before!!.host,before.port){
+            tryOrClose(before!!.host, before.port) {
                 val channel = getChannel(before.host, before.port)
                 val stub = NodeGrpc.newBlockingStub(channel)
                 get = stub.get(Services.name.newBuilder().setName(name).build())
