@@ -19,3 +19,4 @@
 ## Bugs
 
 1. When a node quits without shutting down the channels (sockets), It's seems that the sockects aren't closed.
+2. Grpc doesn't support null
