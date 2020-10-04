@@ -106,9 +106,8 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                 predecessor = null
             }
 
-        } catch (e: Exception) {
-            println(e)
-            channel.shutdown()
+        } catch (e: NullPointerException) {
+            println("Predecessor is null")
         } finally {
 //            channel.shutdown()
         }
@@ -365,7 +364,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         tryOrClose(host, port) {
             successor = stub.successor(serviceId)
         }
-
 
         return successor ?: self // return this if null
 

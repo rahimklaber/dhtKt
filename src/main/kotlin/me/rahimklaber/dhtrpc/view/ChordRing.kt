@@ -20,10 +20,10 @@ data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-    val args = arrayOf("192.168.0.175", "222")
+//    val args = arrayOf("192.168.0.175", "222")
 
     //
-//    val args = arrayOf("192.168.0.175", "765", "192.168.0.175", "222")
+    val args = arrayOf("192.168.0.175", "765", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTable
     val datamap = node.dataTable
@@ -74,7 +74,7 @@ class ChordRing : View("ChordRing") {
             setOnMouseClicked {
                 runAsyncWithOverlay {
                     val data = node.getRequest(this.selectedItem!!.first)
-                    this.selectedItem!!.second = data.data
+                    this.selectedItem!!.second = data?.data
                     this.refresh()
                 }
             }
