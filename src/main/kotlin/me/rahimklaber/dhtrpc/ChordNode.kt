@@ -12,6 +12,9 @@ import io.grpc.*
 import io.grpc.stub.StreamObserver
 import javafx.collections.FXCollections
 import javafx.collections.ObservableMap
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import java.util.*
 import java.util.concurrent.Executors
@@ -36,7 +39,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     val dataTable: ObservableMap<String, String> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
     val fingerTableIds = IntRange(1, TABLE_SIZE).map { (self.id + 2.0.pow(it - 1)).toInt() % CHORD_SIZE }
-    val scheduledExecutor = Executors.newSingleThreadScheduledExecutor()
     val channelPool = HashMap<String, ManagedChannel>()
     var server: Server? = null
 
@@ -47,7 +49,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     }
 
     fun gracefullShutdownHook() {
-        scheduledExecutor.shutdownNow()
         server?.shutdownNow()
         channelPool.forEach { it.value.shutdownNow() }
     }
@@ -463,13 +464,17 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                 fingerTable[it] = self
             }
         }
-        scheduledExecutor.scheduleAtFixedRate({
-            try {
-                checkPredecessor();stabilize();fixFingers()
-            } catch (e: java.lang.Exception) {
-                println(e)
+        GlobalScope.launch {
+            while (true){
+                delay(5000)
+                try {
+                    checkPredecessor();stabilize();fixFingers()
+                } catch (e: java.lang.Exception) {
+                    println(e)
+                }
             }
-        }, 5000, 5000, TimeUnit.MILLISECONDS)
+        }
+
         return start
     }
 

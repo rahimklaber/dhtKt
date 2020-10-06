@@ -36,6 +36,9 @@ dependencies {
 
     implementation("no.tornado:tornadofx:1.7.17")
 
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9")
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.3.9")
+
     testImplementation("org.junit.jupiter:junit-jupiter:5.6.2")
     testImplementation("ch.tutteli.atrium:atrium-fluent-en_GB:0.12.0")
 }

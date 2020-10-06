@@ -1,16 +1,11 @@
 package me.rahimklaber.dhtrpc.view
 
-import javafx.animation.Animation
-import javafx.animation.KeyFrame
-import javafx.animation.Timeline
 import javafx.collections.FXCollections
 import javafx.collections.MapChangeListener
-import javafx.event.ActionEvent
-import javafx.event.EventHandler
 import javafx.scene.control.TableView
 import javafx.scene.control.TextArea
 import javafx.stage.FileChooser
-import javafx.util.Duration
+import kotlinx.coroutines.*
 import me.rahimklaber.dhtrpc.ChordNode
 import me.rahimklaber.dhtrpc.Services.tableEntry
 import tornadofx.*
@@ -20,10 +15,10 @@ data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-//    val args = arrayOf("192.168.0.175", "222")
+    val args = arrayOf("192.168.0.175", "222")
+//
 
-    //
-    val args = arrayOf("192.168.0.175", "765", "192.168.0.175", "222")
+//    val args = arrayOf("192.168.0.175", "887", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTable
     val datamap = node.dataTable
@@ -39,17 +34,12 @@ class ChordRing : View("ChordRing") {
 
             label {
 
-                val timeline = Timeline(
-                    KeyFrame(
-                        Duration.millis(1000.0),
-                        EventHandler { e: ActionEvent ->
-                            this@label.text = "${node.self}\n${node.predecessor}"
-                        }
-                    )
-                )
-                timeline.cycleCount = Animation.INDEFINITE // loop forever
-
-                timeline.play()
+                GlobalScope.launch(Dispatchers.Main) {
+                    while (true) {
+                        delay(1000)
+                        this@label.text = "${node.self}\n${node.predecessor}"
+                    }
+                }
 
             }
             button {
@@ -60,7 +50,7 @@ class ChordRing : View("ChordRing") {
                 text = "bulk Insert file"
                 setOnAction {
                     val file = chooseFile(filters = arrayOf(FileChooser.ExtensionFilter("json", "*.json"))).first()
-                    runAsync {
+                    GlobalScope.launch {
                         bulkInsert(file)
                     }
                 }
@@ -129,7 +119,7 @@ class ChordRing : View("ChordRing") {
                     setOnAction {
                         val key = Putbox.children[0] as TextArea
                         val data = Putbox.children[1] as TextArea
-                        runAsync {
+                        GlobalScope.launch (Dispatchers.IO){
                             node.putRequest(key.text, data.text)
                         }
                     }
@@ -149,8 +139,11 @@ class ChordRing : View("ChordRing") {
                     setOnAction {
                         val key = Getbox.children[0] as TextArea
                         val value = Getbox.children[1] as TextArea
-                        runAsync {
-                            value.text = node.getRequest(key.text).toString()
+                        GlobalScope.launch(Dispatchers.Main) {
+
+                            value.text = withContext(Dispatchers.IO) {
+                                node.getRequest(key.text).toString()
+                            }
                         }
 
                     }
@@ -171,7 +164,6 @@ class ChordRing : View("ChordRing") {
         var count = 0
         jsonMap.forEach { (key, value) ->
             node.putRequest(key, value)
-            if (count++ == 1000) return
         }
 
     }
