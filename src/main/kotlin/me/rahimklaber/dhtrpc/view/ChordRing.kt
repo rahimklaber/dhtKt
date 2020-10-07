@@ -15,10 +15,10 @@ data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-    val args = arrayOf("192.168.0.175", "222")
-//
+//    val args = arrayOf("192.168.0.175", "222")
 
-//    val args = arrayOf("192.168.0.175", "887", "192.168.0.175", "222")
+//
+    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTable
     val datamap = node.dataTable
@@ -73,15 +73,17 @@ class ChordRing : View("ChordRing") {
             tableview<UiTableEntry> {
                 items = FXCollections.observableArrayList(map.map { e -> UiTableEntry(e.value, e.key) })
                 map.addListener(MapChangeListener {
-                    runLater {
+                    GlobalScope.launch(Dispatchers.Main) {
                         items = FXCollections.observableArrayList(map.map { e -> UiTableEntry(e.value, e.key) })
                     }
                 })
                 val poscol = readonlyColumn("fingerpos", UiTableEntry::fingerPos)
                 readonlyColumn("entry", UiTableEntry::tableEntry)
                 setOnMouseClicked {
-                    runAsyncWithOverlay {
-                        val list = node.listRequest(this@tableview.selectedItem!!.tableEntry)
+                    GlobalScope.launch {
+                        val list =
+                            withContext(Dispatchers.IO) { node.listRequest(this@tableview.selectedItem!!.tableEntry) }
+
 
                         (right as TableView<*>).items =
                             FXCollections.observableArrayList(list.map { MyPair<String, String?>(it, null) })
@@ -94,8 +96,8 @@ class ChordRing : View("ChordRing") {
             tableview<DataEntry> {
                 items = FXCollections.observableArrayList()
                 datamap.addListener(MapChangeListener {
-                    runLater {
-                        items = FXCollections.observableArrayList(datamap.map { e -> DataEntry(e.key, e.value) })
+                    GlobalScope.launch(Dispatchers.Main) {
+                        items.add(DataEntry(it.key, it.map.getOrDefault(it.key,"")))
                     }
                 })
                 readonlyColumn("name", DataEntry::name)
@@ -119,7 +121,7 @@ class ChordRing : View("ChordRing") {
                     setOnAction {
                         val key = Putbox.children[0] as TextArea
                         val data = Putbox.children[1] as TextArea
-                        GlobalScope.launch (Dispatchers.IO){
+                        GlobalScope.launch(Dispatchers.IO) {
                             node.putRequest(key.text, data.text)
                         }
                     }
@@ -155,7 +157,7 @@ class ChordRing : View("ChordRing") {
      * json file :
      *      {key : value}
      */
-    fun bulkInsert(file: File) {
+    suspend fun bulkInsert(file: File) {
 
         val json = loadJsonObject(file.inputStream())
         val jsonMap = json.toMap().mapValues {
@@ -163,7 +165,9 @@ class ChordRing : View("ChordRing") {
         }
         var count = 0
         jsonMap.forEach { (key, value) ->
-            node.putRequest(key, value)
+            GlobalScope.launch(Dispatchers.IO) {
+                node.putRequest(key, value)
+            }
         }
 
     }

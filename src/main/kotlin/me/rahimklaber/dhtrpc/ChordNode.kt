@@ -69,7 +69,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
      * Try to send a message.
      * If it fails due to a closed connection, the channel is removed and the node is removed from the finger table.
      */
-    fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
+    inline fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
         try {
             `fun`()
         } catch (e: StatusRuntimeException) {
