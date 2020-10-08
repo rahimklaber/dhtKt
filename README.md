@@ -15,9 +15,13 @@
 * should the value of the key/value pair be mutable? If so this would make it hard to do replication.
 * should probably make the server and client separate.
 * If predecessor fails, it should be removed from the finger table.
+* memory consumption is really high when inserting a lot of stuff, first i thought that this was the sockets(or something relating to them)
+, but now im thinking it might be the gui and display all of them at the same time without any pagination or something.
+    - Just tested this went from 900MB to 600MB by not displaying the data.
+        - should be able to reduce it further.
 
 ## Bugs
 
 1. When a node quits without shutting down the channels (sockets), It's seems that the sockects aren't closed.
-2. Grpc doesn't support null
+2. Grpc doesn't support null, use Defaultvalue as null?
 3. Concurrent modification exception when spamming put request

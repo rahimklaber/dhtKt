@@ -15,16 +15,16 @@ data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-//    val args = arrayOf("192.168.0.175", "222")
-
+    val args = arrayOf("192.168.0.175", "222")
 //
-    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
+
+//    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTable
     val datamap = node.dataTable
 
     init {
-        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "TRACE")
+//        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "TRACE")
         runAsync { node.startService(args).awaitTermination() }
     }
 
@@ -158,17 +158,19 @@ class ChordRing : View("ChordRing") {
      *      {key : value}
      */
     suspend fun bulkInsert(file: File) {
-
-        val json = loadJsonObject(file.inputStream())
-        val jsonMap = json.toMap().mapValues {
-            it.value.toString()
-        }
-        var count = 0
-        jsonMap.forEach { (key, value) ->
-            GlobalScope.launch(Dispatchers.IO) {
-                node.putRequest(key, value)
+        val inputStream = file.inputStream().use { stream ->
+            val json = loadJsonObject(stream)
+            val jsonMap = json.toMap().mapValues {
+                it.value.toString()
+            }
+            var count = 0
+            jsonMap.forEach { (key, value) ->
+                GlobalScope.launch(Dispatchers.IO) {
+                    node.putRequest(key, value)
+                }
             }
         }
+
 
     }
 }

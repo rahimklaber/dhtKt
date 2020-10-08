@@ -23,7 +23,7 @@ import kotlin.collections.HashMap
 import kotlin.math.absoluteValue
 import kotlin.math.pow
 
-class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
+class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplBase() {
     //    init {
 //        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
 //    }
@@ -129,10 +129,9 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         return keys ?: emptyList()
     }
 
-    override fun list(request: Services.empty, responseObserver: StreamObserver<Services.keys>) {
+    override suspend fun list(request: Services.empty): Services.keys {
         logger.info { "received list request" }
-        responseObserver.onNext(Services.keys.newBuilder().addAllKey(dataTable.keys).build())
-        responseObserver.onCompleted()
+        return Services.keys.newBuilder().addAllKey(dataTable.keys).build()
     }
 
     fun fixFingers() {
@@ -190,7 +189,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     }
 
-    override fun notify(request: Services.tableEntry, responseObserver: StreamObserver<Services.empty>) {
+    override suspend fun notify(request: Services.tableEntry): Services.empty {
         logger.debug { "received notify request from ${request.host}:${request.port}" }
         if (predecessor == null) {
 
@@ -198,8 +197,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         } else if (inRangePredecessor(request.id)) {
             predecessor = request
         }
-        responseObserver.onNext(Services.empty.getDefaultInstance())
-        responseObserver.onCompleted()
+        return Services.empty.getDefaultInstance()
     }
 
 
@@ -286,18 +284,15 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         return predecessor
     }
 
-    override fun predecessor(request: Services.empty, responseObserver: StreamObserver<Services.tableEntry>) {
+    override suspend fun predecessor(request: Services.empty): Services.tableEntry {
         logger.debug { "received predecessor request" }
-        responseObserver.onNext(predecessor)
-        responseObserver.onCompleted()
+        //Todo: check this
+        return predecessor ?: Services.tableEntry.getDefaultInstance()
     }
 
-    override fun join(request: Services.tableEntry, responseObserver: StreamObserver<Services.tableEntry>) {
-        responseObserver.onNext(self)
+    override suspend fun join(request: Services.tableEntry): Services.tableEntry {
         insertIntoTable(request)
-
-        responseObserver.onCompleted()
-
+        return self
     }
 
     /**
@@ -322,7 +317,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         }
     }
 
-    override fun put(request: Services.dataEntry, responseObserver: StreamObserver<Services.empty>) {
+    override suspend fun put(request: Services.dataEntry): Services.empty {
         logger.info("Received put request for key ${request.name}")
         val hash = request.name.hashCode().absoluteValue % CHORD_SIZE
         if (inRangeSuccessor(hash)) {
@@ -330,8 +325,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         } else {
             putRequest(request.name, request.data)
         }
-        responseObserver.onNext(Services.empty.getDefaultInstance())
-        responseObserver.onCompleted()
+        return Services.empty.getDefaultInstance()
     }
 
     fun joinRequest(host: String, port: Int): Services.tableEntry {
@@ -397,27 +391,26 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         else successor == self
     }
 
-    override fun successor(request: Services.id, responseObserver: StreamObserver<Services.tableEntry>) {
+    override suspend fun successor(request: Services.id): Services.tableEntry {
         logger.debug { "received successor request of ${request.id}" }
 
         val maxBefore = maxBefore(request.id)
 
-        if (successor != null && inRangeSuccessor(request.id)) {
-            responseObserver.onNext(successor)
+        return if (successor != null && inRangeSuccessor(request.id)) {
+          successor ?: Services.tableEntry.getDefaultInstance()
         } else {
             when {
                 maxBefore == null -> {
-                    responseObserver.onNext(self)
+                    self
                 }
                 successor != null && successor!!.id == self.id -> { // only you in the finger table.
-                    responseObserver.onNext(self)
+                    self
                 }
                 else -> {
-                    responseObserver.onNext(successorRequest(maxBefore.host, maxBefore.port, request.id))
+                    return successorRequest(maxBefore.host, maxBefore.port, request.id)
                 }
             }
         }
-        responseObserver.onCompleted()
     }
 
     /**
@@ -508,18 +501,16 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         }
     }
 
-    override fun get(request: Services.name, responseObserver: StreamObserver<Services.dataEntry>) {
+    override suspend fun get(request: Services.name): Services.dataEntry {
         logger.info("Received get request for key:  ${request.name}")
         val hash = request.name.hashCode().absoluteValue % CHORD_SIZE
         val dataEntry: Services.dataEntry?
-        dataEntry = if (inRangeSuccessor(hash)) {
+        return if (inRangeSuccessor(hash)) {
             dataEntryfromMapEntry(request.name, dataTable[request.name]!!)
         } else {
-            getRequest(request.name)
+            getRequest(request.name) ?: Services.dataEntry.getDefaultInstance()
         }
-        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry?.data}")
-        responseObserver.onNext(dataEntry)
-        responseObserver.onCompleted()
+//        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry?.data}")
     }
 
     companion object {
