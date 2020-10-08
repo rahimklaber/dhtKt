@@ -13,6 +13,9 @@
 - [ ]  create class for finger table
 - [ ]  create class for data table
 
+## Ideas
+- Make a key associated to a list of values. You can then append to this list.
+
 ## things to think about
 * should the value of the key/value pair be mutable? If so this would make it hard to do replication.
 * should probably make the server and client separate.
