@@ -31,6 +31,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     var predecessor: Services.tableEntry? = null
     val fingerTable: ObservableMap<Int, Services.tableEntry> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
+    val fingerTableWrapper: FingerTable = FingerTable(self.id, TABLE_SIZE)
     val dataTable: ObservableMap<String, String> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
     val fingerTableIds = IntRange(1, TABLE_SIZE).map { (self.id + 2.0.pow(it - 1)).toInt() % CHORD_SIZE }
@@ -71,16 +72,18 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         } catch (e: StatusRuntimeException) {
             channelPool["$host$port"]?.shutdown()
             channelPool.remove("$host$port")
-            val toRemove = fingerTable.filter { (_, e) -> (e.host == host) and (e.port == port) }.keys
-            fingerTable.keys.removeAll(toRemove)
-            //close
+            fingerTableWrapper.removeIf { _: Int, e: Services.tableEntry -> (e.host == host) and (e.port == port) }
         }
     }
 
     var successor: Services.tableEntry?
-        get() = fingerTable[fingerTableIds[0]]
+        get() = fingerTableWrapper[0]
         set(value) {
-            fingerTable[fingerTableIds[0]] = value
+            if (value != null) {
+                fingerTableWrapper[0] = value
+            } else {
+                fingerTableWrapper.remove(0)
+            }
         }
     var currFinger = 0 // for fixFingers. from 0 to 10
 
@@ -98,8 +101,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         // Not having state == ...IDLE caused a memory leak somehow or NVM.
         if (state == ConnectivityState.TRANSIENT_FAILURE || state == ConnectivityState.IDLE || state == ConnectivityState.SHUTDOWN) {
             logger.info { "Predecessor has failed." }
-            val toRemove = fingerTable.filter { (k, e) -> e == predecessor }.keys
-            fingerTable.keys.removeAll(toRemove)
+            fingerTableWrapper.removeIf { _, e -> e == predecessor }
             predecessor = null
         }
 
@@ -137,13 +139,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
                 successorRequest(
                     helper.host,
                     helper.port,
-                    fingerTableIds[currFinger]
+                    fingerTableWrapper.ids[currFinger]
                 )
             }
         }
         //Todo: wtf is this 🔽
         if (successorRequest != null && successorRequest?.port != 0) {
-            fingerTable[fingerTableIds[currFinger]] = successorRequest
+            fingerTable[currFinger] = successorRequest
 
         } else {
             logger.info { "port is 0. At FixFingers" }
@@ -155,7 +157,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     suspend fun stabilize() {
         try {
             logger.debug { "checking successor" }
-            val predecessor_of_successor = withContext(Dispatchers.IO) { predecessorRequest(successor!!) }
+            val predecessor_of_successor = predecessorRequest(successor!!)
             if (predecessor_of_successor != null &&
                 inRangeSuccessor(predecessor_of_successor.id)
             ) {
@@ -165,14 +167,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
                     logger.info { "Port is 0. at stabilize." }
 
             }
-            withContext(Dispatchers.IO) {
-                notifyRequest(successor!!)
-            }
+
+            notifyRequest(successor!!)
+
         } catch (e: StatusRuntimeException) {
             logger.info { "successor has failed." }//Should probably make this debug.
             //Todo: Make general function.
-            val toRemove = fingerTable.filter { (k, e) -> e == successor }.keys
-            fingerTable.keys.removeAll(toRemove)
+            fingerTableWrapper.removeIf { _, e -> e == successor }
             channelPool["${successor?.host}${successor?.port}"]?.shutdown()
             channelPool.remove("${successor?.host}${successor?.port}")
         } catch (e: NullPointerException) {
@@ -225,7 +226,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
     /**
-     * TODO this seems to always return true ?
+     * TODO document this.
      *
      * @param e
      */
@@ -233,27 +234,19 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         // This is confusing as fuck
         // dont like that the `insertPredicate` fun uses the `e` param.
         fun insertPredicate(k: Int): Boolean {
-            return if (fingerTable[k] == null) {
+            return if (fingerTableWrapper.getByAbsolutePos(k) == null) {
                 true
             } else {
-                val diffCurr = fingerDiff(k, fingerTable[k]!!.id)
+                val diffCurr = fingerDiff(k, fingerTableWrapper.getByAbsolutePos(k)!!.id)
                 val diffNew = fingerDiff(k, e.id)
                 diffNew <= diffCurr
             }
         }
 
-        fun MutableMap<Int, Services.tableEntry>.putIf(
-            key: Int,
-            value: Services.tableEntry,
-            predicate: (Int) -> Boolean
-        ) {
-            if (predicate(key)) put(key, value)
-
-        }
         if (e.id == self.id) return
-        fingerTableIds
+        fingerTableWrapper.ids
             .forEach {
-                fingerTable.putIf(
+                fingerTableWrapper.putIf(
                     it,
                     e,
                     ::insertPredicate
@@ -307,7 +300,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         if (inRangeSuccessor(hash)) {
             dataTable[name] = data
         } else {
-            val before = maxBefore(hash)
+            val before = fingerTableWrapper.maxBefore(hash)
             if (before == null) {
                 logger.warn { "Cannot insert data" }
                 return
@@ -345,7 +338,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
     fun buildTable(seedHost: String, seedPort: Int) {
-        for (i in fingerTableIds) {
+        for (i in fingerTableWrapper.ids) {
             runBlocking {
                 val entry = successorRequest(seedHost, seedPort, i)
                 insertIntoTable(entry)
@@ -398,7 +391,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     override suspend fun successor(request: Services.id): Services.tableEntry {
         logger.debug { "received successor request of ${request.id}" }
 
-        val maxBefore = maxBefore(request.id)
+        val maxBefore = fingerTableWrapper.maxBefore(request.id)
 
         return if (successor != null && inRangeSuccessor(request.id)) {
             successor ?: Services.tableEntry.getDefaultInstance()
@@ -417,30 +410,8 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         }
     }
 
-    /**
-     * get the closest preceding node to the id
-     * Todo: fix this, it doesnt take the ring into consideration
-     * @param id
-     * @return
-     */
-    fun maxBefore(id: Int): Services.tableEntry? {
-        return fingerTable.filter { (k, e) -> e.id < id }
-            .map { (k, e) -> e }
-            .maxWith(Comparator.comparingInt(Services.tableEntry::getId)) ?: predecessor
-    }
 
-    /**
-     * get the closest node after the id
-     * Todo this might return null so fix that
-     *
-     * @param id
-     * @return
-     */
-    fun minAfter(id: Int): Services.tableEntry? {
-        return fingerTable.filter { (k, e) -> e.id > id }
-            .map { (k, e) -> e }
-            .minWith(Comparator.comparingInt(Services.tableEntry::getId))
-    }
+
 
     private fun hash(): Int {
         return (host.hashCode().absoluteValue + port.hashCode()) % CHORD_SIZE//2^8
@@ -457,9 +428,10 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         if (args.size > 2)
             start(args[2], args[3].toInt())
         else {
-            fingerTableIds.forEach {
-                fingerTable[it] = self
+            for (i in 0 until TABLE_SIZE){
+                fingerTableWrapper[i] = self
             }
+
         }
         GlobalScope.launch {
             while (true) {
@@ -492,7 +464,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         return if (inRangeSuccessor(hash) && dataTable.containsKey(name)) {
             dataEntryfromMapEntry(name, dataTable[name]!!)
         } else {
-            val before = maxBefore(hash)
+            val before = fingerTableWrapper.maxBefore(hash)
 
             var get: Services.dataEntry? = null
             tryOrClose(before!!.host, before.port) {

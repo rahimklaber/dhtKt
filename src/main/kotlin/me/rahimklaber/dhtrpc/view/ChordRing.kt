@@ -20,7 +20,7 @@ class ChordRing : View("ChordRing") {
 
     val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
-    val map = node.fingerTable
+    val map = node.fingerTableWrapper.table
     val datamap = node.dataTable
 
     init {

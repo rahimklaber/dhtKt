@@ -2,27 +2,96 @@ package me.rahimklaber.dhtrpc
 
 import javafx.collections.FXCollections
 import javafx.collections.ObservableMap
+import java.util.Comparator
 import kotlin.math.pow
+
 
 class FingerTable(val id: Int, val size: Int) {
     val ringSize = 2.0.pow(size.toDouble()).toInt()
     val ids = IntRange(1, size).map { (id + 2.0.pow(it - 1)).toInt() % ChordNode.CHORD_SIZE }
-    private val table: ObservableMap<Int, Services.tableEntry> =
+    // should fix ui and mkae this private?
+     val table: ObservableMap<Int, Services.tableEntry> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
-
-    operator fun get(key: Int): Services.tableEntry? = table[key]
-    operator fun set(key: Int, entry: Services.tableEntry) {
-        table[key] = entry
-    }
 
     /**
      * Get table entry by it's "id" within the fingerTable.
      * From 0 to tableSize - 1
+     *
+     * For example:
+     * If the size of finger table is 5 and get(4), then the 5th element in the finger table is returned.
+     * The under the hood the elements of the fingertable are mapped differently.
      */
-    fun getByTablePos(key : Int) = this[ids[key]]
+    operator fun get(key: Int): Services.tableEntry? = table[ids[key]]
+
     /**
      * Set table entry by it's "id" within the fingerTable.
      * From 0 to tableSize - 1
+     *
+     * For example:
+     * If the size of finger table is 5 and Set(4,RANDOM_ENTRY), then the element is set in the 5th position of the finger table.
+     * The under the hood the elements of the fingertable are mapped differently.
      */
-    fun setByTablePos(key : Int , entry : Services.tableEntry) = this[ids[key]]
+    operator fun set(key: Int, entry: Services.tableEntry) {
+        table[ids[key]] = entry
+    }
+
+    /**
+     * Remove the element from the fingertable by its table id.
+     */
+    fun remove(id : Int){
+        table.remove(ids[id])
+    }
+
+    fun removeIf(predicate: (Int, Services.tableEntry) -> Boolean) {
+        val toRemove = table.filter { (id, entry) ->
+            predicate(id, entry)
+        }.keys
+        table.keys.removeAll(toRemove)
+    }
+
+    /**
+     * Get entries by their `absolute` index.
+     */
+    fun getByAbsolutePos(key: Int) = table[key]
+
+    /**
+     * Set entries by their `absolute` index.
+     */
+    fun setByAbsolutePos(key: Int, entry: Services.tableEntry) {
+        table[key] = entry
+    }
+    fun putIf(
+        key: Int,
+        value: Services.tableEntry,
+        predicate: (Int) -> Boolean
+    ) {
+        if (predicate(key)) setByAbsolutePos(key, value)
+
+    }
+
+    /**
+     * get the closest preceding node to the id
+     * Todo: fix this, it doesnt take the ring into consideration
+     * @param id
+     * @return
+     */
+    fun maxBefore(id: Int): Services.tableEntry? {
+        return table.filter { (_, e) -> e.id < id }
+            .map { (_, e) -> e }
+            .maxWithOrNull(Comparator.comparingInt(Services.tableEntry::getId)) //?: predecessor
+    }
+
+
+    /**
+     * get the closest node after the id
+     * Todo this might return null so fix that
+     *
+     * @param id
+     * @return
+     */
+    fun minAfter(id: Int): Services.tableEntry? {
+        return table.filter { (k, e) -> e.id > id }
+            .map { (k, e) -> e }
+            .minWithOrNull(Comparator.comparingInt(Services.tableEntry::getId))
+    }
 }
