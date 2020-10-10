@@ -326,12 +326,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 
     override suspend fun put(request: Services.dataEntry): Services.empty {
         logger.info("Received put request for key ${request.name}")
-        val hash = request.name.hashCode().absoluteValue % CHORD_SIZE
-        if (inRangeSuccessor(hash)) {
-            dataTable[request.name] = request.data
-        } else {
-            putRequest(request.name, request.data)
-        }
+        putRequest(request.name, request.data)
         return Services.empty.getDefaultInstance()
     }
 
