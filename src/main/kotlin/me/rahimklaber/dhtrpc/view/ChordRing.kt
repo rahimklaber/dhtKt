@@ -15,10 +15,10 @@ data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-    val args = arrayOf("192.168.0.175", "222")
+//    val args = arrayOf("192.168.0.175", "222")
 //
 
-//    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
+    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTable
     val datamap = node.dataTable
@@ -62,10 +62,10 @@ class ChordRing : View("ChordRing") {
             readonlyColumn("key", MyPair<String, String?>::first)
             readonlyColumn("value", MyPair<String, String?>::second)
             setOnMouseClicked {
-                runAsyncWithOverlay {
-                    val data = node.getRequest(this.selectedItem!!.first)
-                    this.selectedItem!!.second = data?.data
-                    this.refresh()
+                GlobalScope.launch(Dispatchers.Main) {
+                    val data = node.getRequest(this@tableview.selectedItem!!.first)
+                    this@tableview.selectedItem!!.second = data?.data
+                    this@tableview.refresh()
                 }
             }
         }

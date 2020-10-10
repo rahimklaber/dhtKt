@@ -5,7 +5,7 @@ import java.net.URI
 plugins {
     java
     idea
-    kotlin("jvm") version "1.3.72"
+    kotlin("jvm") version "1.4.10"
     id("com.google.protobuf") version ("0.8.9")
     id("org.openjfx.javafxplugin") version "0.0.8"
     application
@@ -43,7 +43,7 @@ dependencies {
     // coroutine
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.9")
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.3.9")
-
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.4.0")
     //testing
     testImplementation("org.junit.jupiter:junit-jupiter:5.6.2")
     testImplementation("ch.tutteli.atrium:atrium-fluent-en_GB:0.12.0")
