@@ -9,18 +9,16 @@ package me.rahimklaber.dhtrpc
  * Todo: Make public facing api use grpc but something else for inter-node communication.????
  */
 import io.grpc.*
-import io.grpc.stub.StreamObserver
 import javafx.collections.FXCollections
 import javafx.collections.ObservableMap
+import kotlinx.coroutines.*
 import mu.KotlinLogging
 import java.util.*
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import kotlin.collections.HashMap
 import kotlin.math.absoluteValue
 import kotlin.math.pow
 
-class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
+class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplBase() {
     //    init {
 //        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
 //    }
@@ -36,7 +34,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     val dataTable: ObservableMap<String, String> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
     val fingerTableIds = IntRange(1, TABLE_SIZE).map { (self.id + 2.0.pow(it - 1)).toInt() % CHORD_SIZE }
-    val scheduledExecutor = Executors.newSingleThreadScheduledExecutor()
     val channelPool = HashMap<String, ManagedChannel>()
     var server: Server? = null
 
@@ -47,7 +44,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     }
 
     fun gracefullShutdownHook() {
-        scheduledExecutor.shutdownNow()
         server?.shutdownNow()
         channelPool.forEach { it.value.shutdownNow() }
     }
@@ -56,6 +52,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         // `:` separator ?
         var channel = channelPool["$host$port"]
         return if (channel == null) {
+            // Todo: find out if creating a channel creates a socket immedietyly, if so use a coroutine for this?
             channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build()
             channelPool["$host$port"] = channel
             channel
@@ -68,7 +65,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
      * Try to send a message.
      * If it fails due to a closed connection, the channel is removed and the node is removed from the finger table.
      */
-    fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
+    inline fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
         try {
             `fun`()
         } catch (e: StatusRuntimeException) {
@@ -88,58 +85,61 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
     var currFinger = 0 // for fixFingers. from 0 to 10
 
     //todo Make this nicer
-    fun checkPredecessor() {
+    suspend fun checkPredecessor() {
 //        logger.info { "checking predecessor $predecessor" }
         if (predecessor == null)
             return
         val channel = getChannel(predecessor!!.host, predecessor!!.port)
-        try {
-            val state = channel.getState(true)
-
-            // THere are problems when the channel is not shutdown correctly
-            // The channel stays open and the connectivity state is set to idle??
-            // Not having state == ...IDLE caused a memory leak somehow or NVM.
-            if (state == ConnectivityState.TRANSIENT_FAILURE || state == ConnectivityState.IDLE) {
-                logger.info { "Predecessor has failed." }
-                val toRemove = fingerTable.filter { (k, e) -> e == predecessor }.keys
-                fingerTable.keys.removeAll(toRemove)
-                predecessor = null
-            }
-
-        } catch (e: NullPointerException) {
-            println("Predecessor is null")
-        } finally {
-//            channel.shutdown()
+        val state = withContext(Dispatchers.IO) {
+            channel.getState(true)
         }
+        // THere are problems when the channel is not shutdown correctly
+        // The channel stays open and the connectivity state is set to idle??
+        // Not having state == ...IDLE caused a memory leak somehow or NVM.
+        if (state == ConnectivityState.TRANSIENT_FAILURE || state == ConnectivityState.IDLE || state == ConnectivityState.SHUTDOWN) {
+            logger.info { "Predecessor has failed." }
+            val toRemove = fingerTable.filter { (k, e) -> e == predecessor }.keys
+            fingerTable.keys.removeAll(toRemove)
+            predecessor = null
+        }
+
 
     }
 
-    fun listRequest(entry: Services.tableEntry): List<String> {
+    /**
+     * lists all of the keys of the given Peer.
+     */
+    suspend fun listRequest(entry: Services.tableEntry): List<String> {
         logger.info { "sending list request to ${entry.host}:${entry.port}" }
 
         var keys: List<String>? = null
         tryOrClose(entry.host, entry.port) {
             val channel = getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
-            keys = stub.list(Services.empty.getDefaultInstance()).keyList
+            keys = withContext(Dispatchers.IO) { stub.list(Services.empty.getDefaultInstance()).keyList }
         }
-
 
         return keys ?: emptyList()
     }
 
-    override fun list(request: Services.empty, responseObserver: StreamObserver<Services.keys>) {
+    override suspend fun list(request: Services.empty): Services.keys {
         logger.info { "received list request" }
-        responseObserver.onNext(Services.keys.newBuilder().addAllKey(dataTable.keys).build())
-        responseObserver.onCompleted()
+        return Services.keys.newBuilder().addAllKey(dataTable.keys).build()
     }
 
-    fun fixFingers() {
+    suspend fun fixFingers() {
         currFinger = if (currFinger == 0) 1 else currFinger
-        val helper = predecessor!! // Todo: What should we do here?
+        val helper = predecessor
+            ?: throw Exception("Predecessor not available for fixFingers, Todo: Create a dedicated exception")// Todo: What should we do here?
         var successorRequest: Services.tableEntry? = null
         tryOrClose(helper.host, helper.port) {
-            successorRequest = successorRequest(helper.host, helper.port, fingerTableIds[currFinger])
+            successorRequest = withContext(Dispatchers.IO) {
+                successorRequest(
+                    helper.host,
+                    helper.port,
+                    fingerTableIds[currFinger]
+                )
+            }
         }
         //Todo: wtf is this 🔽
         if (successorRequest != null && successorRequest?.port != 0) {
@@ -152,10 +152,10 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         currFinger = (currFinger + 1) % TABLE_SIZE
     }
 
-    fun stabilize() {
+    suspend fun stabilize() {
         try {
             logger.debug { "checking successor" }
-            val predecessor_of_successor = predecessorRequest(successor!!)
+            val predecessor_of_successor = withContext(Dispatchers.IO) { predecessorRequest(successor!!) }
             if (predecessor_of_successor != null &&
                 inRangeSuccessor(predecessor_of_successor.id)
             ) {
@@ -165,9 +165,12 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                     logger.info { "Port is 0. at stabilize." }
 
             }
-            notifyRequest(successor!!)
+            withContext(Dispatchers.IO) {
+                notifyRequest(successor!!)
+            }
         } catch (e: StatusRuntimeException) {
             logger.info { "successor has failed." }//Should probably make this debug.
+            //Todo: Make general function.
             val toRemove = fingerTable.filter { (k, e) -> e == successor }.keys
             fingerTable.keys.removeAll(toRemove)
             channelPool["${successor?.host}${successor?.port}"]?.shutdown()
@@ -179,17 +182,17 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     }
 
-    fun notifyRequest(entry: Services.tableEntry) {
+    suspend fun notifyRequest(entry: Services.tableEntry) {
         logger.debug { "sending notify request to ${entry.host}:${entry.port}" }
         tryOrClose(entry.host, entry.port) {
             val channel = getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
-            val notify = stub.notify(self)
+            withContext(Dispatchers.IO) { stub.notify(self) }
         }
 
     }
 
-    override fun notify(request: Services.tableEntry, responseObserver: StreamObserver<Services.empty>) {
+    override suspend fun notify(request: Services.tableEntry): Services.empty {
         logger.debug { "received notify request from ${request.host}:${request.port}" }
         if (predecessor == null) {
 
@@ -197,8 +200,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         } else if (inRangePredecessor(request.id)) {
             predecessor = request
         }
-        responseObserver.onNext(Services.empty.getDefaultInstance())
-        responseObserver.onCompleted()
+        return Services.empty.getDefaultInstance()
     }
 
 
@@ -272,37 +274,34 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         return 0
     }
 
-    fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
+    suspend fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
         logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
         var predecessor: Services.tableEntry? = null
         tryOrClose(entry.host, entry.port) {
             val channel = getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
-            predecessor = stub.predecessor(Services.empty.getDefaultInstance())
+            predecessor = withContext(Dispatchers.IO) { stub.predecessor(Services.empty.getDefaultInstance()) }
         }
 
 
         return predecessor
     }
 
-    override fun predecessor(request: Services.empty, responseObserver: StreamObserver<Services.tableEntry>) {
+    override suspend fun predecessor(request: Services.empty): Services.tableEntry {
         logger.debug { "received predecessor request" }
-        responseObserver.onNext(predecessor)
-        responseObserver.onCompleted()
+        //Todo: check this
+        return predecessor ?: Services.tableEntry.getDefaultInstance()
     }
 
-    override fun join(request: Services.tableEntry, responseObserver: StreamObserver<Services.tableEntry>) {
-        responseObserver.onNext(self)
+    override suspend fun join(request: Services.tableEntry): Services.tableEntry {
         insertIntoTable(request)
-
-        responseObserver.onCompleted()
-
+        return self
     }
 
     /**
      * Put a key,value pair into the DHT.
      */
-    fun putRequest(name: String, data: String) {
+    suspend fun putRequest(name: String, data: String) {
         logger.info { "Making Put request for key: $name, value: $data" }
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
         if (inRangeSuccessor(hash)) {
@@ -316,21 +315,19 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             tryOrClose(before.host, before.port) {
                 val channel = getChannel(before.host, before.port)
                 val stub = NodeGrpc.newBlockingStub(channel)
-                val put = stub.put(Services.dataEntry.newBuilder().setName(name).setData(data).build())
+                val put = withContext(Dispatchers.IO) {
+                    stub.put(
+                        Services.dataEntry.newBuilder().setName(name).setData(data).build()
+                    )
+                }
             }
         }
     }
 
-    override fun put(request: Services.dataEntry, responseObserver: StreamObserver<Services.empty>) {
+    override suspend fun put(request: Services.dataEntry): Services.empty {
         logger.info("Received put request for key ${request.name}")
-        val hash = request.name.hashCode().absoluteValue % CHORD_SIZE
-        if (inRangeSuccessor(hash)) {
-            dataTable[request.name] = request.data
-        } else {
-            putRequest(request.name, request.data)
-        }
-        responseObserver.onNext(Services.empty.getDefaultInstance())
-        responseObserver.onCompleted()
+        putRequest(request.name, request.data)
+        return Services.empty.getDefaultInstance()
     }
 
     fun joinRequest(host: String, port: Int): Services.tableEntry {
@@ -349,12 +346,14 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
 
     fun buildTable(seedHost: String, seedPort: Int) {
         for (i in fingerTableIds) {
-            val entry = successorRequest(seedHost, seedPort, i)
-            insertIntoTable(entry)
+            runBlocking {
+                val entry = successorRequest(seedHost, seedPort, i)
+                insertIntoTable(entry)
+            }
         }
     }
 
-    fun successorRequest(host: String, port: Int, id: Int): Services.tableEntry {
+    suspend fun successorRequest(host: String, port: Int, id: Int): Services.tableEntry {
         logger.debug { "sending successor request to $host : $port of id $id" }
         val serviceId = Services.id.newBuilder().setId(id).build()
         val channel = getChannel(host, port)
@@ -362,7 +361,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         var successor: Services.tableEntry? = null
 
         tryOrClose(host, port) {
-            successor = stub.successor(serviceId)
+            successor = withContext(Dispatchers.IO) { stub.successor(serviceId) }
         }
 
         return successor ?: self // return this if null
@@ -396,27 +395,26 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
         else successor == self
     }
 
-    override fun successor(request: Services.id, responseObserver: StreamObserver<Services.tableEntry>) {
+    override suspend fun successor(request: Services.id): Services.tableEntry {
         logger.debug { "received successor request of ${request.id}" }
 
         val maxBefore = maxBefore(request.id)
 
-        if (successor != null && inRangeSuccessor(request.id)) {
-            responseObserver.onNext(successor)
+        return if (successor != null && inRangeSuccessor(request.id)) {
+            successor ?: Services.tableEntry.getDefaultInstance()
         } else {
             when {
                 maxBefore == null -> {
-                    responseObserver.onNext(self)
+                    self
                 }
                 successor != null && successor!!.id == self.id -> { // only you in the finger table.
-                    responseObserver.onNext(self)
+                    self
                 }
                 else -> {
-                    responseObserver.onNext(successorRequest(maxBefore.host, maxBefore.port, request.id))
+                    return successorRequest(maxBefore.host, maxBefore.port, request.id)
                 }
             }
         }
-        responseObserver.onCompleted()
     }
 
     /**
@@ -463,13 +461,17 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
                 fingerTable[it] = self
             }
         }
-        scheduledExecutor.scheduleAtFixedRate({
-            try {
-                checkPredecessor();stabilize();fixFingers()
-            } catch (e: java.lang.Exception) {
-                println(e)
+        GlobalScope.launch {
+            while (true) {
+                delay(5000)
+                try {
+                    checkPredecessor();stabilize();fixFingers()
+                } catch (e: java.lang.Exception) {
+                    println(e)
+                }
             }
-        }, 5000, 5000, TimeUnit.MILLISECONDS)
+        }
+
         return start
     }
 
@@ -484,7 +486,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             .build()
     }
 
-    fun getRequest(name: String): Services.dataEntry? {
+    suspend fun getRequest(name: String): Services.dataEntry? {
         logger.info { "Making get request for : $name" }
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
         return if (inRangeSuccessor(hash) && dataTable.containsKey(name)) {
@@ -496,25 +498,23 @@ class ChordNode(val host: String, val port: Int) : NodeGrpc.NodeImplBase() {
             tryOrClose(before!!.host, before.port) {
                 val channel = getChannel(before.host, before.port)
                 val stub = NodeGrpc.newBlockingStub(channel)
-                get = stub.get(Services.name.newBuilder().setName(name).build())
+                get = withContext(Dispatchers.IO) { stub.get(Services.name.newBuilder().setName(name).build()) }
             }
 
             get
         }
     }
 
-    override fun get(request: Services.name, responseObserver: StreamObserver<Services.dataEntry>) {
+    override suspend fun get(request: Services.name): Services.dataEntry {
         logger.info("Received get request for key:  ${request.name}")
         val hash = request.name.hashCode().absoluteValue % CHORD_SIZE
         val dataEntry: Services.dataEntry?
-        dataEntry = if (inRangeSuccessor(hash)) {
+        return if (inRangeSuccessor(hash)) {
             dataEntryfromMapEntry(request.name, dataTable[request.name]!!)
         } else {
-            getRequest(request.name)
+            getRequest(request.name) ?: Services.dataEntry.getDefaultInstance()
         }
-        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry?.data}")
-        responseObserver.onNext(dataEntry)
-        responseObserver.onCompleted()
+//        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry?.data}")
     }
 
     companion object {
