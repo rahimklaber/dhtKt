@@ -29,26 +29,24 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         .setId(hash())
         .build()
     var predecessor: Services.tableEntry? = null
-    val fingerTable: ObservableMap<Int, Services.tableEntry> =
-        FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
+
     val fingerTableWrapper: FingerTable = FingerTable(self.id, TABLE_SIZE)
     val dataTable: ObservableMap<String, String> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
-    val fingerTableIds = IntRange(1, TABLE_SIZE).map { (self.id + 2.0.pow(it - 1)).toInt() % CHORD_SIZE }
+
     val channelPool = HashMap<String, ManagedChannel>()
     var server: Server? = null
 
     init {
+        fun gracefullShutdownHook() {
+            server?.shutdownNow()
+            channelPool.forEach { it.value.shutdownNow() }
+        }
         Runtime.getRuntime().addShutdownHook(Thread {
             gracefullShutdownHook()
         })
     }
-
-    fun gracefullShutdownHook() {
-        server?.shutdownNow()
-        channelPool.forEach { it.value.shutdownNow() }
-    }
-
+    
     fun getChannel(host: String, port: Int): ManagedChannel {
         // `:` separator ?
         var channel = channelPool["$host$port"]
@@ -145,7 +143,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         }
         //Todo: wtf is this 🔽
         if (successorRequest != null && successorRequest?.port != 0) {
-            fingerTable[currFinger] = successorRequest
+            fingerTableWrapper[currFinger] = successorRequest ?: throw Error("Should never happen")
 
         } else {
             logger.info { "port is 0. At FixFingers" }
