@@ -46,7 +46,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
             gracefullShutdownHook()
         })
     }
-    
+
     fun getChannel(host: String, port: Int): ManagedChannel {
         // `:` separator ?
         var channel = channelPool["$host$port"]
@@ -251,19 +251,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
                 )
             }
     }
-
-
-    /**
-     * get the key where the node with the given id should be inserted.
-     *
-     */
-    fun keyOf(id: Int): Int {
-        for (i in 1..TABLE_SIZE) {
-            val key = (self.id + 2.0.pow(i - 1)).toInt() % CHORD_SIZE
-            if (id >= key) return key
-        }
-        return 0
-    }
+    
 
     suspend fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
         logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
