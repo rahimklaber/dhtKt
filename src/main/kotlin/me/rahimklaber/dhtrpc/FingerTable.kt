@@ -12,7 +12,15 @@ class FingerTable(val id: Int, val size: Int) {
     // should fix ui and mkae this private?
      val table: ObservableMap<Int, Services.tableEntry> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
-
+    var successor: Services.tableEntry?
+        get() = this[0]
+        set(value) {
+            if (value != null) {
+                this[0] = value
+            } else {
+                remove(0)
+            }
+        }
     /**
      * Get table entry by it's "id" within the fingerTable.
      * From 0 to tableSize - 1
@@ -94,4 +102,55 @@ class FingerTable(val id: Int, val size: Int) {
             .map { (k, e) -> e }
             .minWithOrNull(Comparator.comparingInt(Services.tableEntry::getId))
     }
+    /**
+     *  Tries to insert the given entry in the finger table.
+     *
+     *  It tries to insert the entry in all of the finger table positions.
+     *
+     * @param e the entry to be inserted
+     */
+    fun insertIntoTable(e: Services.tableEntry) {
+        // This is confusing as fuck
+        // dont like that the `insertPredicate` fun uses the `e` param.
+        fun insertPredicate(k: Int): Boolean {
+            return if (getByAbsolutePos(k) == null) {
+                true
+            } else {
+                val diffCurr = fingerDiff(k, getByAbsolutePos(k)!!.id)
+                val diffNew = fingerDiff(k, e.id)
+                diffNew <= diffCurr
+            }
+        }
+
+        if (e.id == id) return
+        ids
+            .forEach {
+                putIf(
+                    it,
+                    e,
+                    ::insertPredicate
+                )
+            }
+    }
+    /**
+     * diff between fingertable pos and an id
+     * takes into account that the fingertable is a ring
+     *
+     * calculates how much needs to be added to `finger` to be `id`
+     */
+    fun fingerDiff(finger: Int, id: Int): Int {
+        return when {
+            id < finger -> {
+                (ChordNode.CHORD_SIZE - finger) + id
+            }
+            id > finger -> {
+                id - finger
+            }
+            else -> {
+                0
+            }
+        }
+    }
+
+
 }

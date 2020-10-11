@@ -13,8 +13,6 @@ import javafx.collections.FXCollections
 import javafx.collections.ObservableMap
 import kotlinx.coroutines.*
 import mu.KotlinLogging
-import java.util.*
-import kotlin.collections.HashMap
 import kotlin.math.absoluteValue
 import kotlin.math.pow
 
@@ -74,15 +72,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         }
     }
 
-    var successor: Services.tableEntry?
-        get() = fingerTableWrapper[0]
-        set(value) {
-            if (value != null) {
-                fingerTableWrapper[0] = value
-            } else {
-                fingerTableWrapper.remove(0)
-            }
-        }
+    var successor by  fingerTableWrapper::successor
     var currFinger = 0 // for fixFingers. from 0 to 10
 
     //todo Make this nicer
@@ -203,56 +193,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
 
-    /**
-     * diff between fingertable pos and an id
-     * takes into account that the fingertable is a ring
-     *
-     * calculates how much needs to be added to `finger` to be `id`
-     */
-    fun fingerDiff(finger: Int, id: Int): Int {
-        return when {
-            id < finger -> {
-                (CHORD_SIZE - finger) + id
-            }
-            id > finger -> {
-                id - finger
-            }
-            else -> {
-                0
-            }
-        }
-    }
-
-    /**
-     * TODO document this.
-     *
-     * @param e
-     */
-    fun insertIntoTable(e: Services.tableEntry) {
-        // This is confusing as fuck
-        // dont like that the `insertPredicate` fun uses the `e` param.
-        fun insertPredicate(k: Int): Boolean {
-            return if (fingerTableWrapper.getByAbsolutePos(k) == null) {
-                true
-            } else {
-                val diffCurr = fingerDiff(k, fingerTableWrapper.getByAbsolutePos(k)!!.id)
-                val diffNew = fingerDiff(k, e.id)
-                diffNew <= diffCurr
-            }
-        }
-
-        if (e.id == self.id) return
-        fingerTableWrapper.ids
-            .forEach {
-                fingerTableWrapper.putIf(
-                    it,
-                    e,
-                    ::insertPredicate
-                )
-            }
-    }
-    
-
     suspend fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
         logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
         var predecessor: Services.tableEntry? = null
@@ -273,7 +213,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
     override suspend fun join(request: Services.tableEntry): Services.tableEntry {
-        insertIntoTable(request)
+        fingerTableWrapper.insertIntoTable(request)
         return self
     }
 
@@ -327,7 +267,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         for (i in fingerTableWrapper.ids) {
             runBlocking {
                 val entry = successorRequest(seedHost, seedPort, i)
-                insertIntoTable(entry)
+                fingerTableWrapper.insertIntoTable(entry)
             }
         }
     }
@@ -397,8 +337,6 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
 
-
-
     private fun hash(): Int {
         return (host.hashCode().absoluteValue + port.hashCode()) % CHORD_SIZE//2^8
     }
@@ -414,7 +352,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         if (args.size > 2)
             start(args[2], args[3].toInt())
         else {
-            for (i in 0 until TABLE_SIZE){
+            for (i in 0 until TABLE_SIZE) {
                 fingerTableWrapper[i] = self
             }
 
