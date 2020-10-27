@@ -26,9 +26,9 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         .setPort(port)
         .setId(hash())
         .build()
-    var predecessor: Services.tableEntry? = null
 
     val fingerTableWrapper: FingerTable = FingerTable(self.id, TABLE_SIZE)
+    var predecessor by fingerTableWrapper::predecessor
     val dataTable: ObservableMap<String, String> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
 

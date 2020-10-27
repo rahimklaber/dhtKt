@@ -21,6 +21,9 @@ class FingerTable(val id: Int, val size: Int) {
                 remove(0)
             }
         }
+    // We have this here even though the predecessor is not a part of the fingertable.
+    // It allows us to use helper functions that reside in the fingertable class.
+    var predecessor: Services.tableEntry? = null
     /**
      * Get table entry by it's "id" within the fingerTable.
      * From 0 to tableSize - 1
