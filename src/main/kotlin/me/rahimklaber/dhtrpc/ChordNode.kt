@@ -32,31 +32,20 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     val dataTable: ObservableMap<String, String> =
         FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
 
-    val channelPool = HashMap<String, ManagedChannel>()
+    val channelPool = ChannelPool()
     var server: Server? = null
 
     init {
         fun gracefullShutdownHook() {
             server?.shutdownNow()
-            channelPool.forEach { it.value.shutdownNow() }
+            channelPool.shutdown()
         }
         Runtime.getRuntime().addShutdownHook(Thread {
             gracefullShutdownHook()
         })
     }
 
-    fun getChannel(host: String, port: Int): ManagedChannel {
-        // `:` separator ?
-        var channel = channelPool["$host$port"]
-        return if (channel == null) {
-            // Todo: find out if creating a channel creates a socket immedietyly, if so use a coroutine for this?
-            channel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build()
-            channelPool["$host$port"] = channel
-            channel
-        } else {
-            channel
-        }
-    }
+
 
     /**
      * Try to send a message.
@@ -80,7 +69,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 //        logger.info { "checking predecessor $predecessor" }
         if (predecessor == null)
             return
-        val channel = getChannel(predecessor!!.host, predecessor!!.port)
+        val channel = channelPool.getChannel(predecessor!!.host, predecessor!!.port)
         val state = withContext(Dispatchers.IO) {
             channel.getState(true)
         }
@@ -104,7 +93,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 
         var keys: List<String>? = null
         tryOrClose(entry.host, entry.port) {
-            val channel = getChannel(entry.host, entry.port)
+            val channel = channelPool.getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             keys = withContext(Dispatchers.IO) { stub.list(Services.empty.getDefaultInstance()).keyList }
         }
@@ -174,7 +163,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     suspend fun notifyRequest(entry: Services.tableEntry) {
         logger.debug { "sending notify request to ${entry.host}:${entry.port}" }
         tryOrClose(entry.host, entry.port) {
-            val channel = getChannel(entry.host, entry.port)
+            val channel = channelPool.getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             withContext(Dispatchers.IO) { stub.notify(self) }
         }
@@ -197,7 +186,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
         var predecessor: Services.tableEntry? = null
         tryOrClose(entry.host, entry.port) {
-            val channel = getChannel(entry.host, entry.port)
+            val channel = channelPool.getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             predecessor = withContext(Dispatchers.IO) { stub.predecessor(Services.empty.getDefaultInstance()) }
         }
@@ -232,7 +221,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
                 return
             }
             tryOrClose(before.host, before.port) {
-                val channel = getChannel(before.host, before.port)
+                val channel = channelPool.getChannel(before.host, before.port)
                 val stub = NodeGrpc.newBlockingStub(channel)
                 val put = withContext(Dispatchers.IO) {
                     stub.put(
@@ -250,7 +239,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
     fun joinRequest(host: String, port: Int): Services.tableEntry {
-        val channel = getChannel(host, port)
+        val channel = channelPool.getChannel(host, port)
         val stub = NodeGrpc.newBlockingStub(channel)
         val join = stub.join(self)
 //        channel.shutdown()
@@ -275,7 +264,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     suspend fun successorRequest(host: String, port: Int, id: Int): Services.tableEntry {
         logger.debug { "sending successor request to $host : $port of id $id" }
         val serviceId = Services.id.newBuilder().setId(id).build()
-        val channel = getChannel(host, port)
+        val channel = channelPool.getChannel(host, port)
         val stub = NodeGrpc.newBlockingStub(channel)
         var successor: Services.tableEntry? = null
 
@@ -392,7 +381,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 
             var get: Services.dataEntry? = null
             tryOrClose(before!!.host, before.port) {
-                val channel = getChannel(before.host, before.port)
+                val channel = channelPool.getChannel(before.host, before.port)
                 val stub = NodeGrpc.newBlockingStub(channel)
                 get = withContext(Dispatchers.IO) { stub.get(Services.name.newBuilder().setName(name).build()) }
             }
