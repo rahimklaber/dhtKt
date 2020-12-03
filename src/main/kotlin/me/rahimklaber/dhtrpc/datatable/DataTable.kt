@@ -12,4 +12,14 @@ interface DataTable<K,V> {
      */
     fun registerSetCallback(callBack: SetCallBack<K,V>)
 
+    /**
+     * Return a list of keys in the table.
+     */
+    fun list() : Set<K>
+
+    /**
+     * Check if the table contains the key.
+     */
+    fun contains(key: K): Boolean
+
 }

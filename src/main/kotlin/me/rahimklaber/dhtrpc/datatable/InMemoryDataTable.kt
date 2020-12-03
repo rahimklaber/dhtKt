@@ -22,5 +22,13 @@ class InMemoryDataTable<K, V> : DataTable<K, V> {
         callBacks.add(callBack)
     }
 
+    override fun list(): Set<K> {
+        return map.keys
+    }
+
+    override fun contains(key: K): Boolean {
+        return map.contains(key)
+    }
+
 }
 

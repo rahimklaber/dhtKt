@@ -15,10 +15,10 @@ data class MyPair<F, S>(var first: F, var second: S)
 data class UiTableEntry(val tableEntry: tableEntry, val fingerPos: Int)
 data class DataEntry(val name: String, val data: String)
 class ChordRing : View("ChordRing") {
-//    val args = arrayOf("192.168.0.175", "222")
-//
+    val args = arrayOf("192.168.0.175", "222")
 
-    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
+//
+//    val args = arrayOf("192.168.0.175", "857", "192.168.0.175", "222")
     var node: ChordNode = ChordNode.create(args)
     val map = node.fingerTableWrapper.table
     val datamap = node.dataTable
@@ -95,11 +95,11 @@ class ChordRing : View("ChordRing") {
             }
             tableview<DataEntry> {
                 items = FXCollections.observableArrayList()
-                datamap.addListener(MapChangeListener {
+                datamap.registerSetCallback { key: String, data: String ->
                     GlobalScope.launch(Dispatchers.Main) {
-                        items.add(DataEntry(it.key, it.map.getOrDefault(it.key,"")))
+                        items.add(DataEntry(key, data))
                     }
-                })
+                }
                 readonlyColumn("name", DataEntry::name)
                 readonlyColumn("data", DataEntry::data)
             }

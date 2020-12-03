@@ -9,9 +9,8 @@ package me.rahimklaber.dhtrpc
  * Todo: Make public facing api use grpc but something else for inter-node communication.????
  */
 import io.grpc.*
-import javafx.collections.FXCollections
-import javafx.collections.ObservableMap
 import kotlinx.coroutines.*
+import me.rahimklaber.dhtrpc.datatable.InMemoryDataTable
 import mu.KotlinLogging
 import kotlin.math.absoluteValue
 import kotlin.math.pow
@@ -20,7 +19,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     //    init {
 //        System.setProperty(org.slf4j.impl.SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "DEBUG")
 //    }
-    private val logger = KotlinLogging.logger {}
+    private val logger = KotlinLogging.logger("ChordNode")
     val self: Services.tableEntry = Services.tableEntry.newBuilder()
         .setHost(host)
         .setPort(port)
@@ -29,15 +28,16 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 
     val fingerTableWrapper: FingerTable = FingerTable(self.id, TABLE_SIZE)
     var predecessor by fingerTableWrapper::predecessor
-    val dataTable: ObservableMap<String, String> =
-        FXCollections.synchronizedObservableMap(FXCollections.observableHashMap())
+
+    val dataTable = InMemoryDataTable<String,String>()
+
 
     val channelPool = ChannelPool()
-    var server: Server? = null
+    lateinit var server: Server
 
     init {
         fun gracefullShutdownHook() {
-            server?.shutdownNow()
+            server.shutdownNow()
             channelPool.shutdown()
         }
         Runtime.getRuntime().addShutdownHook(Thread {
@@ -103,7 +103,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 
     override suspend fun list(request: Services.empty): Services.keys {
         logger.info { "received list request" }
-        return Services.keys.newBuilder().addAllKey(dataTable.keys).build()
+        return Services.keys.newBuilder().addAllKey(dataTable.list()).build()
     }
 
     suspend fun fixFingers() {
@@ -374,7 +374,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     suspend fun getRequest(name: String): Services.dataEntry? {
         logger.info { "Making get request for : $name" }
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
-        return if (inRangeSuccessor(hash) && dataTable.containsKey(name)) {
+        return if (inRangeSuccessor(hash) && dataTable.contains(name)) {
             dataEntryfromMapEntry(name, dataTable[name]!!)
         } else {
             val before = fingerTableWrapper.maxBefore(hash)
