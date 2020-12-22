@@ -25,6 +25,10 @@ repositories {
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
 
+//
+    implementation("org.graphstream:gs-core:2.0")
+    implementation("org.graphstream:gs-ui-swing:2.0")
+
     //grpc
     implementation("io.grpc:grpc-netty-shaded:1.26.0")
     implementation("io.grpc:grpc-protobuf:1.26.0")

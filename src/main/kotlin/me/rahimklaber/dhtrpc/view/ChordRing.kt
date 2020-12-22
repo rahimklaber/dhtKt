@@ -50,7 +50,7 @@ class ChordRing : View("ChordRing") {
                 text = "bulk Insert file"
                 setOnAction {
                     val file = chooseFile(filters = arrayOf(FileChooser.ExtensionFilter("json", "*.json"))).first()
-                    GlobalScope.launch {
+                    GlobalScope.launch(Dispatchers.IO) {
                         bulkInsert(file)
                     }
                 }
@@ -165,9 +165,9 @@ class ChordRing : View("ChordRing") {
             }
             var count = 0
             jsonMap.forEach { (key, value) ->
-                GlobalScope.launch(Dispatchers.IO) {
+//                GlobalScope.launch(Dispatchers.IO) {
                     node.putRequest(key, value)
-                }
+//                }
             }
         }
 
