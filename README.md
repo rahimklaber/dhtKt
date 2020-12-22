@@ -12,9 +12,12 @@
 - [ ]  replication for durability
 - [ ]  create class for finger table
 - [ ]  create class for data table
+- [ ]  return location of node where key was put, when making a put request
 
 ## Ideas
 - Make a key associated to a list of values. You can then append to this list.
+- use sealed classes for request when we don't know if the request failed or not
+- create wrappers instead of using gtenerated classes directl
 
 ## things to think about
 * should the value of the key/value pair be mutable? If so this would make it hard to do replication.
@@ -32,3 +35,6 @@
 2. Grpc doesn't support null, use Defaultvalue as null?
 3. Concurrent modification exception when spamming put request
 4. leaving and then rejoining the DHT fucks up in the beginning. Everything is fine after a few seconds. 
+5. `FingerTable.maxBefore` does not take the ring into account.
+6.  Grpc requests don't work when too much data is sent? particularly when I try to do a list request with like a few t
+thousand keys. I can and probably should use streaming for a lot of data.

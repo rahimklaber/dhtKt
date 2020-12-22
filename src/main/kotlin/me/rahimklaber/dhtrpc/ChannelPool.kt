@@ -2,6 +2,7 @@ package me.rahimklaber.dhtrpc
 
 import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
+import io.grpc.StatusRuntimeException
 
 /**
  * Class that handles all of the grpc-Channels we use.
@@ -47,6 +48,18 @@ class ChannelPool {
     }
 
 
-
+    /**
+     * Try to send a message.
+     * If it fails due to a closed connection, the channel is removed.
+     */
+    inline fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
+        try {
+            `fun`()
+        } catch (e: StatusRuntimeException) {
+            this["$host$port"]?.shutdown()
+            remove("$host$port")
+//            fingerTableWrapper.removeIf { _: Int, e: Services.tableEntry -> (e.host == host) and (e.port == port) }
+        }
+    }
 
 }

@@ -57,7 +57,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         } catch (e: StatusRuntimeException) {
             channelPool["$host$port"]?.shutdown()
             channelPool.remove("$host$port")
-            fingerTableWrapper.removeIf { _: Int, e: Services.tableEntry -> (e.host == host) and (e.port == port) }
+//            fingerTableWrapper.removeIf { _: Int, e: Services.tableEntry -> (e.host == host) and (e.port == port) }
         }
     }
 
