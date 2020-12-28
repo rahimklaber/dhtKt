@@ -12,7 +12,7 @@
 - [ ]  replication for durability
 - [ ]  create class for finger table
 - [ ]  create class for data table
-
+- [ ]  implement lookup(key) -> Ip, which given a key returns the ip responsible for that key.
 ## Ideas
 - Make a key associated to a list of values. You can then append to this list.
 
