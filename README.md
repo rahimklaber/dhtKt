@@ -15,6 +15,13 @@
 - [ ]  implement lookup(key) -> Ip, which given a key returns the ip responsible for that key.
 ## Ideas
 - Make a key associated to a list of values. You can then append to this list.
+- nodes can advertise that they can store more info, other nodes can then send
+Data to this node. This could then be used to achieve a BitTorrent like system
+Where clients can request pieces of data from multiple nodes.
+This brings the problem of how do you know which nodes hold the data.
+One possibility is to make the network some kind of distributed tracker.
+Each key would be associated to a list of nodes that might also store this data.
+
 
 ## things to think about
 * should the value of the key/value pair be mutable? If so this would make it hard to do replication.
