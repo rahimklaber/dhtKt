@@ -13,6 +13,7 @@
 - [ ]  create class for finger table
 - [ ]  create class for data table
 - [ ]  implement lookup(key) -> Ip, which given a key returns the ip responsible for that key.
+- [ ]  cmd client
 ## Ideas
 - Make a key associated to a list of values. You can then append to this list.
 - nodes can advertise that they can store more info, other nodes can then send
