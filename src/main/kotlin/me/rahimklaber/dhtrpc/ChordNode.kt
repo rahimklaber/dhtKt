@@ -29,11 +29,13 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     val fingerTableWrapper: FingerTable = FingerTable(self.id, TABLE_SIZE)
     var predecessor by fingerTableWrapper::predecessor
 
-    val dataTable = InMemoryDataTable<String,String>()
+    val dataTable = InMemoryDataTable<String, String>()
 
 
     val channelPool = ChannelPool()
     lateinit var server: Server
+
+    val client = Client()
 
     init {
         fun gracefullShutdownHook() {
@@ -46,22 +48,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
 
-
-    /**
-     * Try to send a message.
-     * If it fails due to a closed connection, the channel is removed and the node is removed from the finger table.
-     */
-    inline fun tryOrClose(host: String, port: Int, `fun`: () -> Unit) {
-        try {
-            `fun`()
-        } catch (e: StatusRuntimeException) {
-            channelPool["$host$port"]?.shutdown()
-            channelPool.remove("$host$port")
-//            fingerTableWrapper.removeIf { _: Int, e: Services.tableEntry -> (e.host == host) and (e.port == port) }
-        }
-    }
-
-    var successor by  fingerTableWrapper::successor
+    var successor by fingerTableWrapper::successor
     var currFinger = 0 // for fixFingers. from 0 to 10
 
     //todo Make this nicer
@@ -88,18 +75,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     /**
      * lists all of the keys of the given Peer.
      */
-    suspend fun listRequest(entry: Services.tableEntry): List<String> {
-        logger.info { "sending list request to ${entry.host}:${entry.port}" }
-
-        var keys: List<String>? = null
-        tryOrClose(entry.host, entry.port) {
-            val channel = channelPool.getChannel(entry.host, entry.port)
-            val stub = NodeGrpc.newBlockingStub(channel)
-            keys = withContext(Dispatchers.IO) { stub.list(Services.empty.getDefaultInstance()).keyList }
-        }
-
-        return keys ?: emptyList()
-    }
+    suspend fun listRequest(entry: Services.tableEntry): List<String> = client.listRequest(Ip(entry.host, entry.port))
 
     override suspend fun list(request: Services.empty): Services.keys {
         logger.info { "received list request" }
@@ -111,7 +87,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         val helper = predecessor
             ?: throw Exception("Predecessor not available for fixFingers, Todo: Create a dedicated exception")// Todo: What should we do here?
         var successorRequest: Services.tableEntry? = null
-        tryOrClose(helper.host, helper.port) {
+        channelPool.tryOrClose(helper.host, helper.port) {
             successorRequest = withContext(Dispatchers.IO) {
                 successorRequest(
                     helper.host,
@@ -162,7 +138,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
 
     suspend fun notifyRequest(entry: Services.tableEntry) {
         logger.debug { "sending notify request to ${entry.host}:${entry.port}" }
-        tryOrClose(entry.host, entry.port) {
+        channelPool.tryOrClose(entry.host, entry.port) {
             val channel = channelPool.getChannel(entry.host, entry.port)
             val stub = NodeGrpc.newBlockingStub(channel)
             withContext(Dispatchers.IO) { stub.notify(self) }
@@ -182,18 +158,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     }
 
 
-    suspend fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? {
-        logger.debug { "sending predecessor request to ${entry.host} : ${entry.port}" }
-        var predecessor: Services.tableEntry? = null
-        tryOrClose(entry.host, entry.port) {
-            val channel = channelPool.getChannel(entry.host, entry.port)
-            val stub = NodeGrpc.newBlockingStub(channel)
-            predecessor = withContext(Dispatchers.IO) { stub.predecessor(Services.empty.getDefaultInstance()) }
-        }
-
-
-        return predecessor
-    }
+    suspend fun predecessorRequest(entry: Services.tableEntry): Services.tableEntry? = client.predecessorRequest(Ip(entry.host,entry.port))
 
     override suspend fun predecessor(request: Services.empty): Services.tableEntry {
         logger.debug { "received predecessor request" }
@@ -220,15 +185,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
                 logger.warn { "Cannot insert data" }
                 return
             }
-            tryOrClose(before.host, before.port) {
-                val channel = channelPool.getChannel(before.host, before.port)
-                val stub = NodeGrpc.newBlockingStub(channel)
-                val put = withContext(Dispatchers.IO) {
-                    stub.put(
-                        Services.dataEntry.newBuilder().setName(name).setData(data).build()
-                    )
-                }
-            }
+            client.putRequest(Ip(before.host, before.port), name, data)
         }
     }
 
@@ -261,21 +218,8 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         }
     }
 
-    suspend fun successorRequest(host: String, port: Int, id: Int): Services.tableEntry {
-        logger.debug { "sending successor request to $host : $port of id $id" }
-        val serviceId = Services.id.newBuilder().setId(id).build()
-        val channel = channelPool.getChannel(host, port)
-        val stub = NodeGrpc.newBlockingStub(channel)
-        var successor: Services.tableEntry? = null
-
-        tryOrClose(host, port) {
-            successor = withContext(Dispatchers.IO) { stub.successor(serviceId) }
-        }
-
-        return successor ?: self // return this if null
-
-
-    }
+    suspend fun successorRequest(host: String, port: Int, id: Int): Services.tableEntry =
+        client.successorRequest(Ip(host, port), id)
 
     fun inRangePredecessor(id: Int): Boolean {
         if (self.id > predecessor!!.id && predecessor!!.id < id && id < self.id) {
@@ -371,22 +315,14 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
             .build()
     }
 
-    suspend fun getRequest(name: String): Services.dataEntry? {
-        logger.info { "Making get request for : $name" }
+    suspend fun getRequest(name: String): Services.dataEntry {
         val hash = name.hashCode().absoluteValue % CHORD_SIZE
         return if (inRangeSuccessor(hash) && dataTable.contains(name)) {
             dataEntryfromMapEntry(name, dataTable[name]!!)
         } else {
-            val before = fingerTableWrapper.maxBefore(hash)
+            val before = fingerTableWrapper.maxBefore(hash) ?: throw Exception("before is null, cannot do get")
 
-            var get: Services.dataEntry? = null
-            tryOrClose(before!!.host, before.port) {
-                val channel = channelPool.getChannel(before.host, before.port)
-                val stub = NodeGrpc.newBlockingStub(channel)
-                get = withContext(Dispatchers.IO) { stub.get(Services.name.newBuilder().setName(name).build()) }
-            }
-
-            get
+            client.getRequest(Ip(before.host, before.port), name)
         }
     }
 
@@ -397,7 +333,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
         return if (inRangeSuccessor(hash)) {
             dataEntryfromMapEntry(request.name, dataTable[request.name]!!)
         } else {
-            getRequest(request.name) ?: Services.dataEntry.getDefaultInstance()
+            getRequest(request.name)
         }
 //        logger.info("Responding to get request (for ${request.name}) with: ${dataEntry?.data}")
     }

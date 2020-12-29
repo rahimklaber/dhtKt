@@ -7,16 +7,7 @@ import mu.KotlinLogging
 import kotlin.math.absoluteValue
 
 
-typealias Ip = Pair<String, Int>
 
-fun Ip.new(host: String, port: Int): Ip {
-    return host to port
-}
-
-val Ip.host
-    get() = this.first
-val Ip.port
-    get() = this.second
 
 interface Iclient {
     suspend fun listRequest(addr: Ip): List<String>
