@@ -277,7 +277,7 @@ class ChordNode(val host: String, val port: Int) : NodeGrpcKt.NodeCoroutineImplB
     fun startService(args: Array<String>): Server {
 
         val start = ServerBuilder
-            .forPort(args[1].toInt())
+            .forPort(port)
             .addService(this)
             .build()
             .start()
