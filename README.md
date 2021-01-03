@@ -26,6 +26,8 @@ Where clients can request pieces of data from multiple nodes.
 This brings the problem of how do you know which nodes hold the data.
 One possibility is to make the network some kind of distributed tracker.
 Each key would be associated to a list of nodes that might also store this data.
+  
+- Add a successor list.
 
 
 ## things to think about

@@ -42,7 +42,8 @@ class CommandLineInterface(
             }
             "predecessor" -> {
                 //Todo: make predecessor request and successor request uniform
-                TODO("make predecessor request and successor request uniform")
+                assert(cmds.size == 3)
+                println(node.predecessorRequest(Ip(cmds[1], cmds[2].toInt()).toTableEntry()))
             }
             else -> {
                 println("dab on th aterz")
