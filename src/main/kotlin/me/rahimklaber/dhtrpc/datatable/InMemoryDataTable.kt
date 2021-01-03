@@ -30,5 +30,9 @@ class InMemoryDataTable<K, V> : DataTable<K, V> {
         return map.contains(key)
     }
 
+    override fun toString(): String {
+        return map.toString()
+    }
+
 }
 
