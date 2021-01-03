@@ -59,6 +59,12 @@ suspend fun main(args: Array<String>) {
     val cmdInterface = CommandLineInterface(Ip("localhost",277),false)
     while (true) {
         val line = readLine() ?: ""
-        cmdInterface.handleCmd(line)
+        try {
+
+            cmdInterface.handleCmd(line)
+        }catch (e: Exception){
+            println("Something went wrong")
+            KotlinLogging.logger("cmdline").debug(e.toString())
+        }
     }
 }
