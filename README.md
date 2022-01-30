@@ -39,6 +39,7 @@ Each key would be associated to a list of nodes that might also store this data.
 , but now im thinking it might be the gui and display all of them at the same time without any pagination or something.
     - Just tested this went from 900MB to 600MB by not displaying the data.
         - should be able to reduce it further.
+* stop using grpc.
 
 ## Bugs
 
